@@ -1,0 +1,13 @@
+{
+  "name": "odc-seet-variance-admin-tools",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Local-only administration tools for the ODC SEET Variance Dashboard",
+  "scripts": {
+    "import:variances": "node scripts/import-monday-variances.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "firebase-admin": "^12.7.0"
+  }
+}

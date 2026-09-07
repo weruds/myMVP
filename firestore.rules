@@ -6,7 +6,10 @@ service cloud.firestore {
     }
 
     function isInitialAdmin() {
-      return signedIn() && request.auth.uid == 'zdhAsiaIXpQwEJ0v1YmH26hK6xL2';
+      return signedIn() && request.auth.uid in [
+        'zdhAsiaIXpQwEJ0v1YmH26hK6xL2',
+        'TDg3rvs7ZfQTggdBUx4xEGNL1P42'
+      ];
     }
 
     match /users/{userId} {

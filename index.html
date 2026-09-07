@@ -3502,7 +3502,10 @@
           <div class="section-title">My Variances</div>
           <div class="section-subtitle" id="variance-subtitle">Enter your TalentID to view your variance report.</div>
         </div>
-        <button class="btn btn-ghost btn-sm" onclick="loadMyVariances()">Refresh</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-ghost btn-sm" id="admin-import-button" onclick="openImportGuide()" style="display:none;">Import variances</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadMyVariances()">Refresh</button>
+        </div>
       </div>
       <div id="my-variances-body"></div>
     </div>
@@ -4189,6 +4192,16 @@
   </div>
 </div>
 
+<!-- Admin Import Guide Modal -->
+<div class="admin-modal-overlay" id="import-guide-modal-overlay">
+  <div class="admin-modal" onclick="event.stopPropagation()">
+    <div class="admin-modal-title">Import private variances</div>
+    <div class="admin-modal-sub">Run the importer on an administrator computer. It keeps the Monday token and service-account credential off the hosted dashboard.</div>
+    <div class="admin-modal-sub" style="text-align:left;background:var(--surface2);padding:12px;border-radius:8px;">1. Configure <strong>scripts/.env</strong>.<br>2. Save the Firebase service-account JSON in <strong>scripts/service-account.json</strong>.<br>3. Run <strong>npm run import:variances</strong> from the project folder.</div>
+    <div class="admin-modal-actions"><button class="btn btn-primary" onclick="closeImportGuide()">Close</button></div>
+  </div>
+</div>
+
 <!-- Authentication Modal -->
 <div class="admin-modal-overlay" id="auth-modal-overlay">
   <div class="admin-modal" onclick="event.stopPropagation()">
@@ -4607,8 +4620,10 @@ _restoreImages(); // re-attach local-only image fields after cold load
 // ADMIN LOCK / UNLOCK
 // ──────────────────────────────────────────────
 let _adminUnlocked = false;
-const INITIAL_ADMIN_UID = 'zdhAsiaIXpQwEJ0v1YmH26hK6xL2';
-const INITIAL_ADMIN_PROFILE = { talentId: 'P102HG', role: 'admin', mustChangePassword: false };
+const INITIAL_ADMIN_PROFILES = {
+  zdhAsiaIXpQwEJ0v1YmH26hK6xL2: { talentId: 'P102HG', role: 'admin', mustChangePassword: false },
+  TDg3rvs7ZfQTggdBUx4xEGNL1P42: { talentId: '', role: 'admin', mustChangePassword: false }
+};
 let _authUser = null;
 let _authProfile = null;
 
@@ -4659,6 +4674,14 @@ function updateAuthButton() {
   }
 }
 
+function openImportGuide() {
+  document.getElementById('import-guide-modal-overlay').classList.add('open');
+}
+
+function closeImportGuide() {
+  document.getElementById('import-guide-modal-overlay').classList.remove('open');
+}
+
 function handleAuthState(user) {
   _authUser = user;
   _authProfile = null;
@@ -4666,8 +4689,8 @@ function handleAuthState(user) {
   if (!user) { loadMyVariances(); return; }
   const profileRef = _fbDb.collection('users').doc(user.uid);
   profileRef.get().then(profile => {
-    if (!profile.exists && user.uid === INITIAL_ADMIN_UID) {
-      return profileRef.set(INITIAL_ADMIN_PROFILE).then(() => profileRef.get());
+    if (!profile.exists && INITIAL_ADMIN_PROFILES[user.uid]) {
+      return profileRef.set(INITIAL_ADMIN_PROFILES[user.uid]).then(() => profileRef.get());
     }
     return profile;
   }).then(profile => {
@@ -4677,6 +4700,7 @@ function handleAuthState(user) {
       return;
     }
     _authProfile = profile.data();
+    document.getElementById('admin-import-button').style.display = _authProfile.role === 'admin' ? '' : 'none';
     if (_authProfile.mustChangePassword) {
       document.getElementById('auth-modal-title').textContent = 'Update your password';
       document.getElementById('auth-modal-sub').textContent = 'Set a new password before viewing your variances.';

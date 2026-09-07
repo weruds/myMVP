@@ -20,3 +20,6 @@ dist/
 
 # Firebase local cache
 .firebase/hosting..cache
+
+# Local variance importer credentials
+scripts/service-account.json
