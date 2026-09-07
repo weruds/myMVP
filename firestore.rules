@@ -1,10 +1,27 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    match /varianceDashboard/{docId} {
-      allow read, write: if true;
+    function signedIn() {
+      return request.auth != null;
     }
 
+    function isInitialAdmin() {
+      return signedIn() && request.auth.uid == 'zdhAsiaIXpQwEJ0v1YmH26hK6xL2';
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isInitialAdmin());
+      allow create, delete: if isInitialAdmin();
+      allow update: if isInitialAdmin() || (
+        request.auth.uid == userId &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['mustChangePassword']) &&
+        request.resource.data.mustChangePassword == false
+      );
+
+      match /variances/{varianceId} {
+        allow read: if signedIn() && (request.auth.uid == userId || isInitialAdmin());
+        allow write: if isInitialAdmin();
+      }
+    }
   }
 }
