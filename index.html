@@ -2947,7 +2947,7 @@
     <div class="sidebar-logo">
       <div class="logo-mark">
         <div>
-          <div class="logo-text">Food Committee Order<br>Monitoring</div>
+          <div class="logo-text">ODC SEET Variance<br>Dashboard</div>
         </div>
       </div>
     </div>
@@ -7680,9 +7680,10 @@ function renderMyVariances(items) {
     body.innerHTML = '<div class="empty-state"><div class="empty-title">No variances found</div><div class="empty-sub">No records on the configured board match your TalentID.</div></div>';
     return;
   }
-  const columns = [...new Set(items.flatMap(item => item.column_values.filter(column => column.text).map(column => column.id)))];
-  const rows = items.map(item => `<tr><td>${escapeHtml(item.name)}</td>${columns.map(id => `<td>${escapeHtml(item.column_values.find(column => column.id === id)?.text || '—')}</td>`).join('')}</tr>`).join('');
-  body.innerHTML = `<div class="variance-summary"><div class="variance-summary-card"><strong>${items.length}</strong><span>Matching record${items.length === 1 ? '' : 's'}</span></div><div class="variance-summary-card"><strong>${columns.length}</strong><span>Reported fields</span></div><div class="variance-summary-card"><strong>${getMondayBoardId()}</strong><span>Board ID</span></div></div><div class="variance-table-wrap"><table class="variance-table"><thead><tr><th>Record</th>${columns.map(id => `<th>${escapeHtml(id)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  const hiddenColumns = new Set(['dropdown_mm6z1mc4', 'color_mm6zqwj2']);
+  const columns = [...new Set(items.flatMap(item => item.column_values.filter(column => column.text && !hiddenColumns.has(column.id)).map(column => column.id)))];
+  const rows = items.map(item => `<tr>${columns.map(id => `<td>${escapeHtml(item.column_values.find(column => column.id === id)?.text || '—')}</td>`).join('')}</tr>`).join('');
+  body.innerHTML = `<div class="variance-summary"><div class="variance-summary-card"><strong>${items.length}</strong><span>Matching record${items.length === 1 ? '' : 's'}</span></div><div class="variance-summary-card"><strong>${columns.length}</strong><span>Reported fields</span></div><div class="variance-summary-card"><strong>${getMondayBoardId()}</strong><span>Board ID</span></div></div><div class="variance-table-wrap"><table class="variance-table"><thead><tr>${columns.map(id => `<th>${escapeHtml(id)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 // Column IDs for the Food Survey Board
