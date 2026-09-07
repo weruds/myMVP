@@ -4442,50 +4442,14 @@ function setFbStatus(status, text) {
 
 function initFirebase() {
   try {
-    _fbApp    = firebase.apps.length ? firebase.app() : firebase.initializeApp(FB_FIRESTORE_CONFIG);
-    _fbDb     = firebase.firestore(_fbApp);
-    firebase.auth().onAuthStateChanged(handleAuthState);
-    // Auto-detect long-polling — smarter fallback for corporate proxies / strict firewalls
+    _fbApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(FB_FIRESTORE_CONFIG);
+    _fbDb = firebase.firestore(_fbApp);
     _fbDb.settings({ experimentalAutoDetectLongPolling: true, merge: true });
-    _fbDocRef = _fbDb.collection(FB_COLLECTION).doc(FB_DOC_ID);
-
-    setFbStatus('syncing', 'Connecting…');
-
-    // Real-time listener — fires on every remote change
-    _fbUnsubscribe = _fbDocRef.onSnapshot(snapshot => {
-      try {
-        if (snapshot.exists) {
-          const data = snapshot.data();
-          state = migrateState(data);
-          state.activities  = state.activities  || [];
-          state.locations   = state.locations   || [];
-          state.people      = state.people      || [];
-          state.activities.forEach(a => { delete a.category; });
-          ensureDefaultActivity(state);
-          _restoreImages();
-        } else {
-          // Document doesn't exist yet — seed it with default activity then write
-          ensureDefaultActivity(state);
-          _fbDocRef.set(state).catch(e => console.warn('Firestore seed error:', e));
-        }
-        setFbStatus('connected', 'Live · Firestore');
-        initDate();
-        updateCounts();
-        navigate(currentPage);
-        if (state.engagement && !_countdownInterval) startCountdown();
-        loadSidebarSurveyResults();
-      } catch(e) {
-        console.error('Firestore onSnapshot handler error:', e);
-        setFbStatus('error', 'Sync error');
-      }
-    }, err => {
-      setFbStatus('error', 'Sync error');
-      console.error('Firestore listener error:', err);
-    });
-
+    firebase.auth().onAuthStateChanged(handleAuthState);
+    setFbStatus('connected', 'Private access');
   } catch(err) {
     setFbStatus('error', 'Init error');
-    console.error('Firestore init error:', err);
+    console.error('Firebase init error:', err);
   }
 }
 
