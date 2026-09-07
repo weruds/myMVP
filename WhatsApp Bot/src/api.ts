@@ -1,3 +1,8 @@
+/**
+ * ODC SEET Food Order Monitoring — WhatsApp Bot API
+ * Developed and created by: Wilson Serquina
+ * September 2026
+ */
 import express, { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
 import { getSocket, getBotConnected } from './index';

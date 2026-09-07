@@ -1,9 +1,13 @@
 <!DOCTYPE html>
+<!-- ODC SEET Food Order Monitoring Dashboard
+     Developed and created by: Wilson Serquina
+     September 2026 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Food Committee Order Monitoring</title>
+<meta name="author" content="Wilson Serquina" />
+<title>SEET Variance Dashboard</title>
 <!-- Firebase SDK (compat v10) — Firestore -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -2461,6 +2465,16 @@
     75%      { transform: translateX(6px); }
   }
   .admin-modal-actions { display: flex; gap: 10px; justify-content: center; }
+  .variance-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:18px; }
+  .variance-summary-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:16px; }
+  .variance-summary-card strong { display:block; font-size:25px; color:var(--accent); margin-bottom:3px; }
+  .variance-summary-card span { font-size:12px; color:var(--muted); }
+  .variance-table-wrap { overflow-x:auto; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); }
+  .variance-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .variance-table th, .variance-table td { padding:11px 14px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .variance-table th { color:var(--muted); font-weight:700; background:var(--surface2); }
+  .variance-table tr:last-child td { border-bottom:none; }
+  @media (max-width:640px) { .variance-summary { grid-template-columns:1fr; } }
 
   /* ─── SCHEDULE ─── */
   /* ── Schedule portrait card ── */
@@ -2947,41 +2961,23 @@
 
     <nav class="sidebar-nav">
       <div class="nav-section">
-        <div class="nav-label">Monitoring</div>
-        <div class="nav-item" data-page="survey-results">
-          <span class="nav-icon"></span> 1 - Survey Results
-        </div>
-        <div class="nav-item active" data-page="activities">
-          <span class="nav-icon"></span> 2 - Food Monitor
-          <span class="nav-count" id="nav-count-activities">0</span>
-        </div>
-        <div class="nav-item" data-page="people">
-          <span class="nav-icon"></span> 3 - People
-          <span class="nav-count" id="nav-count-people">0</span>
-        </div>
-        <div class="nav-item" data-page="fc-assignments">
-          <span class="nav-icon">📋</span> 4 - Food Committee Assignments
-        </div>
-        <!-- Survey nav items hidden -->
-        <span style="display:none;" id="survey-nav-badge"></span>
-        <span style="display:none;" id="initial-survey-nav-badge"></span>
-      </div>
-      <div class="nav-section">
-        <div class="nav-label">Scheduler</div>
-        <div class="nav-item" data-page="schedule">
-          <span class="nav-icon">🗓️</span> Food Committee Schedule
+        <div class="nav-label">Variances</div>
+        <div class="nav-item active" data-page="my-variances">
+          <span class="nav-icon"></span> View my Variances
         </div>
       </div>
-      <!-- hidden count targets still needed by updateCounts() -->
-      <span style="display:none;" id="nav-count-carseats"></span>
-      <span style="display:none;" id="nav-count-beds"></span>
-      <span style="display:none;" id="nav-count-games"></span>
-      <span style="display:none;" id="nav-count-committee"></span>
-      <span style="display:none;" id="nav-count-grocery"></span>
-      <span style="display:none;" id="nav-count-meals"></span>
-      <span style="display:none;" id="nav-count-expenses"></span>
+      <!-- Hidden count targets retained for the existing state updater. -->
+      <span style="display:none;" id="nav-count-activities"></span><span style="display:none;" id="nav-count-people"></span>
+      <span style="display:none;" id="nav-count-carseats"></span><span style="display:none;" id="nav-count-beds"></span>
+      <span style="display:none;" id="nav-count-games"></span><span style="display:none;" id="nav-count-committee"></span>
+      <span style="display:none;" id="nav-count-grocery"></span><span style="display:none;" id="nav-count-meals"></span>
+      <span style="display:none;" id="nav-count-expenses"></span><span style="display:none;" id="survey-nav-badge"></span>
+      <span style="display:none;" id="initial-survey-nav-badge"></span>
     </nav>
 
+    <div style="padding:10px 14px 0;">
+      <button class="admin-lock-btn" onclick="openTalentIdModal()" title="Enter your TalentID" style="width:100%;justify-content:center;">Enter my TalentID</button>
+    </div>
     <!-- Admin lock button -->
     <div style="padding:10px 14px 6px;">
       <button class="admin-lock-btn" id="admin-lock-btn" onclick="openAdminModal()" title="Configure Dashboard" style="width:100%;justify-content:center;">
@@ -3492,6 +3488,19 @@
         <button class="btn btn-primary admin-only" onclick="openModal('modal-expense')">＋ Add Expense</button>
       </div>
       <div id="expenses-page-list"></div>
+    </div>
+
+    <!-- ══════════════════ MY VARIANCES ══════════════════ -->
+    <div class="page active" id="page-my-variances">
+      <div class="glow-line"></div>
+      <div class="section-header">
+        <div>
+          <div class="section-title">My Variances</div>
+          <div class="section-subtitle" id="variance-subtitle">Enter your TalentID to view your variance report.</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadMyVariances()">Refresh</button>
+      </div>
+      <div id="my-variances-body"></div>
     </div>
 
     <!-- ══════════════════ SURVEY PAGE ══════════════════ -->
@@ -4176,13 +4185,23 @@
   </div>
 </div>
 
+<!-- TalentID Modal -->
+<div class="admin-modal-overlay" id="talent-id-modal-overlay">
+  <div class="admin-modal" onclick="event.stopPropagation()">
+    <div class="admin-modal-title">Enter my TalentID</div>
+    <div class="admin-modal-sub">Your TalentID is used only to retrieve your records from the configured Monday board.</div>
+    <input class="admin-passcode-input" id="talent-id-input" type="text" maxlength="50" placeholder="TalentID" autocomplete="off" onkeydown="if(event.key==='Enter')saveTalentId()" />
+    <div class="admin-modal-actions"><button class="btn btn-ghost" onclick="closeTalentIdModal()">Cancel</button><button class="btn btn-primary" onclick="saveTalentId()">Save</button></div>
+  </div>
+</div>
+
 <!-- Admin Passcode Modal -->
 <div class="admin-modal-overlay" id="admin-modal-overlay">
   <div class="admin-modal" onclick="event.stopPropagation()">
     <div class="admin-modal-icon" id="admin-modal-icon"></div>
     <div class="admin-modal-title" id="admin-modal-title">Configure Dashboard</div>
-    <div class="admin-modal-sub" id="admin-modal-sub">Enter the admin passcode to continue.</div>
-    <input class="admin-passcode-input" id="admin-passcode-input" type="password" maxlength="8" placeholder="••••••••" autocomplete="off" oninput="clearAdminError()" onkeydown="if(event.key==='Enter')submitAdminPasscode()" />
+    <div class="admin-modal-sub" id="admin-modal-sub">Enter the current quarter and year passcode to update the board ID.</div>
+    <input class="admin-passcode-input" id="admin-passcode-input" type="password" maxlength="8" placeholder="Q32026" autocomplete="off" oninput="clearAdminError()" onkeydown="if(event.key==='Enter')submitAdminPasscode()" />
     <div class="admin-error-msg" id="admin-error-msg"></div>
     <div class="admin-modal-actions">
       <button class="btn btn-ghost" onclick="closeAdminModal()">Cancel</button>
@@ -4388,17 +4407,17 @@
 // FIREBASE (Firestore — hardcoded config)
 // ──────────────────────────────────────────────
 const FB_FIRESTORE_CONFIG = {
-  apiKey:            "AIzaSyBI5GEDEVf7iVC1owtCzXvhLZAGo8J5-P4",
-  authDomain:        "seet-order-management.firebaseapp.com",
-  projectId:         "seet-order-management",
-  storageBucket:     "seet-order-management.firebasestorage.app",
-  messagingSenderId: "392030365223",
-  appId:             "1:392030365223:web:c1a26ce4996d42e0f85002",
-  measurementId:     "G-NHKDJC743M"
+  apiKey:            "AIzaSyCIfemlCcJVKtuHum6s3gV9_KIECxk_4ZI",
+  authDomain:        "seet-variances.firebaseapp.com",
+  projectId:         "seet-variances",
+  storageBucket:     "seet-variances.firebasestorage.app",
+  messagingSenderId: "129124255638",
+  appId:             "1:129124255638:web:f0c63536da94a970b03fb7",
+  measurementId:     "G-291ZM6G4FN"
 };
 
-const FB_COLLECTION = 'planner';
-const FB_DOC_ID     = 'engagement_planner';
+const FB_COLLECTION = 'varianceDashboard';
+const FB_DOC_ID     = 'configuration';
 
 let _fbApp  = null;
 let _fbDb   = null;
@@ -4615,6 +4634,25 @@ _restoreImages(); // re-attach local-only image fields after cold load
 // ADMIN LOCK / UNLOCK
 // ──────────────────────────────────────────────
 let _adminUnlocked = false;
+const TALENT_ID_KEY = 'variance_talent_id';
+
+function openTalentIdModal() {
+  document.getElementById('talent-id-input').value = localStorage.getItem(TALENT_ID_KEY) || '';
+  document.getElementById('talent-id-modal-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('talent-id-input').focus(), 80);
+}
+
+function closeTalentIdModal() {
+  document.getElementById('talent-id-modal-overlay').classList.remove('open');
+}
+
+function saveTalentId() {
+  const talentId = document.getElementById('talent-id-input').value.trim();
+  if (!talentId) return;
+  localStorage.setItem(TALENT_ID_KEY, talentId);
+  closeTalentIdModal();
+  loadMyVariances();
+}
 
 function _getAdminPasscode() {
   const now = new Date();
@@ -4642,7 +4680,8 @@ function openAdminModal() {
   document.getElementById('admin-error-msg').textContent = '';
   document.getElementById('admin-passcode-input').classList.remove('error');
   document.getElementById('admin-modal-icon').textContent  = '';
-  document.getElementById('admin-modal-title').textContent = 'Configure Dashboard';
+  document.getElementById('admin-modal-title').textContent = 'Configure Board';
+  document.getElementById('admin-modal-sub').textContent = 'Enter the current quarter and year passcode to update the Board ID.';
   overlay.classList.add('open');
   setTimeout(() => document.getElementById('admin-passcode-input').focus(), 80);
 }
@@ -4667,8 +4706,21 @@ function submitAdminPasscode() {
     btn.classList.add('unlocked');
     btn.innerHTML = '<span id="admin-lock-label">Admin Mode</span>';
     closeAdminModal();
-    renderPage(currentPage);
-    showToast('Admin mode enabled');
+    const boardId = prompt('Enter the Monday Board ID (numbers only):', getMondayBoardId());
+    if (boardId !== null) {
+      const normalizedBoardId = boardId.trim();
+      if (/^\d+$/.test(normalizedBoardId)) {
+        state.mondayBoardId = normalizedBoardId;
+        saveState();
+        showToast('Board ID updated');
+      } else {
+        showToast('Board ID must contain numbers only.');
+      }
+    }
+    _adminUnlocked = false;
+    document.body.classList.add('admin-locked');
+    btn.classList.remove('unlocked');
+    btn.innerHTML = '<span id="admin-lock-label">Configure</span>';
   } else {
     const errEl = document.getElementById('admin-error-msg');
     errEl.textContent = 'Incorrect passcode. Try again.';
@@ -4728,6 +4780,7 @@ function initDate() {
 // NAVIGATION
 // ──────────────────────────────────────────────
 const PAGE_TITLES = {
+  'my-variances':      'My Variances',
   dashboard:           'Dashboard',
   activities:          'Food Orders Monitor',
   'fc-assignments':    'Food Committee Assignments',
@@ -4769,7 +4822,7 @@ const ADD_LABELS = {
   'initial-survey':    null,
 };
 
-let currentPage = 'activities';
+let currentPage = 'my-variances';
 let currentActivityId = null; // which activity the overview is scoped to
 
 function navigateToActivity(id) {
@@ -6286,7 +6339,8 @@ function renderActivityItem(a) {
 // RENDER PAGES
 // ──────────────────────────────────────────────
 function renderPage(page) {
-  if      (page === 'dashboard')       renderDashboard();
+  if      (page === 'my-variances')    loadMyVariances();
+  else if (page === 'dashboard')       renderDashboard();
   else if (page === 'activities')      renderActivities();
   else if (page === 'fc-assignments')  renderFcAssignments();
   else if (page === 'quarters')        renderQuarters();
@@ -7576,7 +7630,60 @@ const MONDAY_API_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJ0aWQiOjcwMDg1NzkxNiwiYWFpIjoxM
 // For local use only: change back to 'http://localhost:3333'
 const WA_BOT_URL    = 'http://localhost:3333';
 const WA_BOT_SECRET = 'odc-seet-wa-bot-2026'; // must match API_SECRET in Railway env vars
-const MONDAY_BOARD_ID  = '18429833290'; // Food Survey Board
+const MONDAY_BOARD_ID  = '18429979717';
+
+function getMondayBoardId() {
+  return state.mondayBoardId || MONDAY_BOARD_ID;
+}
+
+function escapeHtml(value) {
+  const node = document.createElement('span');
+  node.textContent = String(value);
+  return node.innerHTML;
+}
+
+function loadMyVariances() {
+  const body = document.getElementById('my-variances-body');
+  const subtitle = document.getElementById('variance-subtitle');
+  const talentId = (localStorage.getItem(TALENT_ID_KEY) || '').trim();
+  if (!talentId) {
+    subtitle.textContent = 'Enter your TalentID to view your variance report.';
+    body.innerHTML = '<div class="empty-state"><div class="empty-title">No TalentID provided</div><div class="empty-sub">To view your variances, please input your TalentID</div></div>';
+    return;
+  }
+  subtitle.textContent = `Loading variance report for TalentID ${talentId}…`;
+  body.innerHTML = '<div class="empty-state"><div class="empty-sub">Retrieving your variance records…</div></div>';
+  const query = `{ boards(ids: [${getMondayBoardId()}]) { items_page(limit: 500) { items { id name column_values { id text } } } } }`;
+  fetch('https://api.monday.com/v2', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${MONDAY_API_TOKEN}`, 'API-Version': '2024-01' },
+    body: JSON.stringify({ query })
+  })
+  .then(r => r.json())
+  .then(json => {
+    if (json.errors) throw new Error(json.errors[0]?.message || 'Monday.com API error');
+    const items = json.data?.boards?.[0]?.items_page?.items || [];
+    const matchingItems = items.filter(item => [item.name, ...item.column_values.map(column => column.text)].some(value => String(value || '').trim().toLowerCase() === talentId.toLowerCase()));
+    subtitle.textContent = `Variance report for TalentID ${talentId}`;
+    renderMyVariances(matchingItems);
+  })
+  .catch(error => {
+    console.error('Variance report error:', error);
+    subtitle.textContent = `Variance report for TalentID ${talentId}`;
+    body.innerHTML = '<div class="empty-state"><div class="empty-title">Unable to load variances</div><div class="empty-sub">Please try again later.</div></div>';
+  });
+}
+
+function renderMyVariances(items) {
+  const body = document.getElementById('my-variances-body');
+  if (!items.length) {
+    body.innerHTML = '<div class="empty-state"><div class="empty-title">No variances found</div><div class="empty-sub">No records on the configured board match your TalentID.</div></div>';
+    return;
+  }
+  const columns = [...new Set(items.flatMap(item => item.column_values.filter(column => column.text).map(column => column.id)))];
+  const rows = items.map(item => `<tr><td>${escapeHtml(item.name)}</td>${columns.map(id => `<td>${escapeHtml(item.column_values.find(column => column.id === id)?.text || '—')}</td>`).join('')}</tr>`).join('');
+  body.innerHTML = `<div class="variance-summary"><div class="variance-summary-card"><strong>${items.length}</strong><span>Matching record${items.length === 1 ? '' : 's'}</span></div><div class="variance-summary-card"><strong>${columns.length}</strong><span>Reported fields</span></div><div class="variance-summary-card"><strong>${getMondayBoardId()}</strong><span>Board ID</span></div></div><div class="variance-table-wrap"><table class="variance-table"><thead><tr><th>Record</th>${columns.map(id => `<th>${escapeHtml(id)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
 
 // Column IDs for the Food Survey Board
 const MONDAY_COL_IDS = [
@@ -7604,7 +7711,7 @@ function syncFromMonday() {
   showToast('Fetching food orders from Monday.com…');
 
   const query = `{
-    boards(ids: [${MONDAY_BOARD_ID}]) {
+    boards(ids: [${getMondayBoardId()}]) {
       items_page(limit: 500) {
         items {
           id

@@ -1,3 +1,8 @@
+/**
+ * ODC SEET Food Order Monitoring — WhatsApp Bot
+ * Developed and created by: Wilson Serquina
+ * September 2026
+ */
 import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason,
