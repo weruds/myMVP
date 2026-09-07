@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "description": "Local-only administration tools for the ODC SEET Variance Dashboard",
   "scripts": {
-    "import:variances": "node scripts/import-monday-variances.js"
+    "import:variances": "node scripts/import-monday-variances.js",
+    "require-jas-password-change": "node scripts/require-jas-password-change.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

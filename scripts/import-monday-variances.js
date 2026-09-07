@@ -20,16 +20,18 @@ admin.initializeApp({ credential: admin.credential.cert(require(serviceAccountPa
 const db = admin.firestore();
 const boardId = process.env.MONDAY_BOARD_ID || '18429979717';
 const columnIds = {
-  talentId: process.env.TALENT_ID_COLUMN_ID,
-  serviceLine: process.env.SERVICE_LINE_COLUMN_ID,
+  ibmSerial: process.env.IBM_SERIAL_COLUMN_ID,
+  group: process.env.GROUP_COLUMN_ID,
   date: process.env.DATE_COLUMN_ID,
   day: process.env.DAY_COLUMN_ID,
-  workType: process.env.WORK_TYPE_COLUMN_ID,
-  chargeCode: process.env.CHARGE_CODE_COLUMN_ID,
-  plannedHours: process.env.PLANNED_HOURS_COLUMN_ID,
-  actualHours: process.env.ACTUAL_HOURS_COLUMN_ID,
-  varianceType: process.env.VARIANCE_TYPE_COLUMN_ID,
-  reason: process.env.REASON_COLUMN_ID
+  workItemId: process.env.WORK_ITEM_ID_COLUMN_ID,
+  ilcHours: process.env.ILC_HOURS_COLUMN_ID,
+  billableHours: process.env.BILLABLE_HOURS_COLUMN_ID,
+  mondayStatus: process.env.MONDAY_STATUS_COLUMN_ID,
+  expectedStatus: process.env.EXPECTED_STATUS_COLUMN_ID,
+  issueType: process.env.ISSUE_TYPE_COLUMN_ID,
+  issueDetail: process.env.ISSUE_DETAIL_COLUMN_ID,
+  status: process.env.STATUS_COLUMN_ID
 };
 
 async function getMondayItems() {
@@ -63,17 +65,19 @@ async function getProfilesByTalentId() {
 function normalizeItem(item) {
   const columns = Object.fromEntries(item.column_values.map(column => [column.id, column.text || '']));
   return {
-    talentId: columns[columnIds.talentId].trim().toUpperCase(),
+    talentId: (columns[columnIds.ibmSerial] || '').trim().toUpperCase(),
     data: {
-      serviceLine: columns[columnIds.serviceLine],
+      group: columns[columnIds.group],
       date: columns[columnIds.date],
       day: columns[columnIds.day],
-      workType: columns[columnIds.workType],
-      chargeCode: columns[columnIds.chargeCode],
-      plannedHours: columns[columnIds.plannedHours],
-      actualHours: columns[columnIds.actualHours],
-      varianceType: columns[columnIds.varianceType],
-      reason: columnIds.reason ? columns[columnIds.reason] : '',
+      workItemId: columns[columnIds.workItemId],
+      ilcHours: columns[columnIds.ilcHours],
+      billableHours: columns[columnIds.billableHours],
+      mondayStatus: columns[columnIds.mondayStatus],
+      expectedStatus: columns[columnIds.expectedStatus],
+      issueType: columns[columnIds.issueType],
+      issueDetail: columns[columnIds.issueDetail],
+      status: columns[columnIds.status],
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }
   };

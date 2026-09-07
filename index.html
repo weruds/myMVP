@@ -7702,9 +7702,10 @@ function escapeHtml(value) {
 }
 
 const VARIANCE_FIELDS = [
-  ['date', 'Date'], ['day', 'Day'], ['serviceLine', 'Service Line'], ['workType', 'Work Type'],
-  ['chargeCode', 'Charge Code'], ['plannedHours', 'Planned Hours'], ['actualHours', 'Actual Hours'],
-  ['varianceType', 'Variance Type'], ['reason', 'Reason']
+  ['group', 'Group'], ['date', 'Date'], ['day', 'Day'], ['workItemId', 'Work Item ID'],
+  ['ilcHours', 'ILC Hours'], ['billableHours', 'Billable Hrs'], ['mondayStatus', 'Monday Status'],
+  ['expectedStatus', 'Expected Status'], ['issueType', 'Issue Type'], ['issueDetail', 'Issue Detail'],
+  ['status', 'Status']
 ];
 
 function loadMyVariances() {
