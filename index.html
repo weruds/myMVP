@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina -->
 <html lang="en">
@@ -7,10 +7,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <meta name="author" content="Wilson Serquina" />
 <title>SEET Variance Dashboard</title>
-<!-- Firebase SDK (compat v10) â€” Firestore -->
+<!-- Firebase SDK (compat v10) â€" Firestore -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<!-- SheetJS — CSV & XLSX parsing -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
@@ -197,9 +199,9 @@
   .nav-sub-list {
     overflow: hidden;
     max-height: 0;
-    transition: max-height 0.22s ease;
+    transition: max-height 0.3s ease;
   }
-  .nav-sub-list.open { max-height: 200px; }
+  .nav-sub-list.open { max-height: 400px; }
 
   .nav-sub-item {
     display: flex; align-items: center; gap: 8px;
@@ -3042,6 +3044,179 @@
     cursor: pointer;
     max-width: 130px;
   }
+  /* ─── ADMIN ENTITY LABEL (non-clickable) ─── */
+  .nav-entity-label {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 10px;
+    font-size: 12px; font-weight: 700;
+    color: rgba(255,255,255,0.80);
+    letter-spacing: 0.5px;
+    cursor: default;
+    user-select: none;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(99,130,255,0.18);
+    background: rgba(99,130,255,0.07);
+    margin-bottom: 4px;
+  }
+  .nav-entity-label .nav-icon { font-size: 15px; }
+
+  /* ─── ADMIN DATA TABLE ─── */
+  .admin-table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+  .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .admin-table thead th {
+    font-size: 10px; font-weight: 700; color: var(--muted2);
+    text-transform: uppercase; letter-spacing: 1px;
+    padding: 10px 14px; text-align: left;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .admin-table tbody tr td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--white);
+    vertical-align: middle;
+  }
+  .admin-table tbody tr:last-child td { border-bottom: none; }
+  .admin-table tbody tr:hover td { background: var(--surface2); }
+
+  /* ─── ILC ATTENDANCE TABLE ─── */
+  .ilc-table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); width: 100%; }
+  .ilc-table {
+    width: 100%; border-collapse: collapse;
+    font-size: 11px; table-layout: fixed;
+  }
+  .ilc-table th, .ilc-table td {
+    padding: 7px 8px; border-bottom: 1px solid var(--border);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    vertical-align: middle;
+  }
+  .ilc-table thead th {
+    font-size: 10px; font-weight: 700; color: var(--muted2);
+    text-transform: uppercase; letter-spacing: 0.8px;
+    background: var(--surface2); position: sticky; top: 0; z-index: 2;
+    text-align: left;
+  }
+  .ilc-table tbody tr:last-child td { border-bottom: none; }
+  .ilc-table tbody tr:hover td { background: var(--surface2); }
+  /* Column widths — fixed so all 18 cols fit a 1280px+ screen */
+  .ilc-table .col-acct   { width: 88px; }
+  .ilc-table .col-serial { width: 90px; }
+  .ilc-table .col-name   { width: 130px; }
+  .ilc-table .col-we     { width: 84px; }
+  .ilc-table .col-act    { width: 120px; }
+  .ilc-table .col-day    { width: 52px; text-align: center; }
+  .ilc-table .col-total  { width: 58px; text-align: right; }
+  .ilc-table .col-ot     { width: 52px; text-align: right; }
+  .ilc-table .col-vl     { width: 40px; text-align: right; }
+  .ilc-table .col-sl     { width: 40px; text-align: right; }
+  .ilc-table th.ilc-weekend { background: rgba(99,102,241,0.09); }
+  .ilc-table td.ilc-weekend { background: rgba(99,102,241,0.04); }
+  .ilc-table th .ilc-th-day  { display:block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; }
+  .ilc-table td.ilc-num { text-align:center; font-variant-numeric:tabular-nums; font-weight:600; }
+  .ilc-table td.ilc-ot  { color:var(--warning); font-weight:700; }
+  .ilc-table td.ilc-ot-we { color:var(--orange); font-weight:700; }
+  .ilc-table td.ilc-total { font-weight:700; color:var(--accent); }
+  .ilc-table td.ilc-computed-ot { color:var(--warning); font-weight:700; }
+  .ilc-table td.ilc-vl  { color: var(--success); font-weight: 700; text-align: right; }
+  .ilc-table td.ilc-sl  { color: var(--danger);  font-weight: 700; text-align: right; }
+  .ilc-variance-badge {
+    display:inline-block; background:rgba(239,68,68,0.13); color:var(--danger);
+    border:1px solid rgba(239,68,68,0.28); border-radius:20px;
+    font-size:9px; font-weight:700; padding:1px 7px; white-space:nowrap; letter-spacing:0.2px;
+  }
+  .ilc-activity-cell { display:flex; flex-direction:column; gap:2px; }
+  /* Per-day activity tag shown inside the hours cell */
+  .ilc-day-tag {
+    display: block; font-size: 8px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.3px; margin-top: 1px; text-align: center;
+    border-radius: 3px; padding: 0 3px; line-height: 1.5;
+  }
+  .ilc-day-tag-gb   { background: rgba(16,185,129,0.08); color: #6b7280; }
+  .ilc-day-tag-vl   { background: rgba(16,185,129,0.18); color: #059669; }
+  .ilc-day-tag-sl   { background: rgba(217,119,6,0.15);  color: #92400e; }
+  .ilc-day-tag-hol  { background: rgba(37,99,235,0.14);  color: #1d4ed8; }
+  .ilc-day-tag-ohol { background: rgba(8,145,178,0.14);  color: #0e7490; }
+  .ilc-day-tag-cdo  { background: rgba(147,51,234,0.14); color: #7c3aed; }
+  .ilc-day-tag-prnt { background: rgba(236,72,153,0.14); color: #be185d; }
+  .ilc-day-tag-ptnw { background: rgba(245,158,11,0.14); color: #b45309; }
+  .ilc-day-tag-utnw { background: rgba(239,68,68,0.14);  color: #991b1b; }
+  .ilc-day-tag-empl { background: rgba(107,114,128,0.14);color: #374151; }
+  .ilc-day-tag-misc { background: var(--surface3);       color: var(--muted); }
+
+  /* ─── STATUS PILLS ─── */
+  .pill-active   { background: rgba(5,150,105,0.12); color: var(--success); border: 1px solid rgba(5,150,105,0.25); padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .pill-inactive { background: rgba(239,68,68,0.10); color: var(--danger);  border: 1px solid rgba(239,68,68,0.22);  padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+
+  /* ─── UPLOAD ZONE ─── */
+  .upload-zone {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px; padding: 28px 20px;
+    border: 2px dashed var(--border2); border-radius: var(--radius);
+    cursor: pointer; background: var(--surface2);
+    transition: border-color 0.15s, background 0.15s;
+    text-align: center;
+  }
+  .upload-zone:hover { border-color: var(--accent); background: var(--accent-glow2); }
+  .upload-zone input[type=file] { display: none; }
+  .upload-zone-icon { font-size: 32px; opacity: 0.55; }
+  .upload-zone-text { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .upload-zone-hint { font-size: 11px; color: var(--muted2); }
+
+  /* ─── PAGE TOOLBAR ─── */
+  .page-toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .page-toolbar select, .page-toolbar input {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--white);
+    font-family: var(--font); font-size: 13px; padding: 7px 12px;
+    outline: none; transition: border-color 0.15s;
+  }
+  .page-toolbar select:focus, .page-toolbar input:focus { border-color: var(--accent); }
+  .page-toolbar select option { background: var(--surface); }
+
+  /* ─── UPLOAD PREVIEW MODAL ─── */
+  .upload-modal-overlay {
+    position: fixed; inset: 0; background: rgba(10,12,30,0.72);
+    z-index: 9100; display: none; align-items: center; justify-content: center;
+    padding: 16px;
+  }
+  .upload-modal-overlay.open { display: flex; }
+  /* Upload-flow confirm modals must sit above the preview overlay (9100) */
+  #upload-final-confirm-overlay,
+  #upload-incomplete-month-overlay { z-index: 9200; }
+  .upload-modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 28px 28px 24px;
+    width: 100%; max-width: 860px; max-height: 88vh;
+    display: flex; flex-direction: column; gap: 16px;
+    box-shadow: 0 8px 48px rgba(0,0,0,0.28);
+  }
+  .upload-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .upload-modal-title { font-size: 17px; font-weight: 700; color: var(--white); }
+  .upload-modal-sub   { font-size: 13px; color: var(--muted); margin-top: 3px; }
+  .upload-modal-close { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 20px; line-height: 1; padding: 2px 4px; }
+  .upload-modal-close:hover { color: var(--white); }
+  .upload-preview-wrap { overflow: auto; flex: 1; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .upload-preview-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .upload-preview-table th {
+    background: var(--surface2); color: var(--muted); font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.6px; padding: 8px 12px;
+    white-space: nowrap; border-bottom: 1px solid var(--border); text-align: left;
+  }
+  .upload-preview-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .upload-preview-table tbody tr:last-child td { border-bottom: none; }
+  .upload-preview-table tbody tr:hover td { background: var(--surface2); }
+  .upload-modal-footer { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .upload-modal-count { font-size: 12px; color: var(--muted); flex: 1; }
+  .upload-warn { font-size: 12px; color: var(--warning); background: rgba(245,158,11,0.10); border: 1px solid rgba(245,158,11,0.25); border-radius: 8px; padding: 8px 12px; }
+  .upload-err  { font-size: 12px; color: var(--danger);  background: rgba(239,68,68,0.08);  border: 1px solid rgba(239,68,68,0.22);  border-radius: 8px; padding: 8px 12px; }
+  .upload-col-map { font-size: 11px; color: var(--muted2); display: flex; flex-wrap: wrap; gap: 6px; }
+  .upload-col-map span { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
+  .upload-col-map span.mapped   { border-color: var(--success); color: var(--success); }
+  .upload-col-map span.unmapped { border-color: var(--warning); color: var(--warning); }
 </style>
 </head>
 <body class="admin-locked">
@@ -3068,11 +3243,61 @@
       <div class="nav-section">
         <div class="nav-label">Variances</div>
         <div class="nav-item active" data-page="my-variances">
-          <span class="nav-icon"></span> View my Variances
+          <span class="nav-icon">📊</span> View my Variances
         </div>
         <div class="nav-item" data-page="audit-reviews" id="nav-audit-reviews" style="display:none;">
-          <span class="nav-icon"></span> Pending Audit Review
+          <span class="nav-icon">🔍</span> Variance Review
           <span class="ar-nav-badge hidden" id="ar-nav-badge">0</span>
+        </div>
+      </div>
+
+      <!-- ADMINISTRATION entity (admin-only) -->
+      <div class="nav-section" id="admin-nav-section" style="display:none;">
+        <div class="nav-label">Admin</div>
+        <div class="nav-item" data-page="onboard-employee">
+          <span class="nav-icon">🧑‍💼</span> Onboard New Employee
+        </div>
+        <div class="nav-item" data-page="service-lines">
+          <span class="nav-icon">🗂️</span> Service Lines
+        </div>
+        <div class="nav-item" data-page="masterlist">
+          <span class="nav-icon">📋</span> Masterlist
+        </div>
+        <div class="nav-item" data-page="wfh-schedule">
+          <span class="nav-icon">🏠</span> WFH Schedule
+        </div>
+      </div>
+
+      <!-- ATTENDANCE entity (admin-only) -->
+      <div class="nav-section" id="attendance-nav-section" style="display:none;">
+        <div class="nav-label">Attendance</div>
+        <div class="nav-item" data-page="monthly-attendance">
+          <span class="nav-icon">📅</span> Monthly Attendance (ILC)
+        </div>
+        <div class="nav-item" data-page="monday-attendance">
+          <span class="nav-icon">🗓️</span> Monthly Attendance (Monday.com)
+        </div>
+      </div>
+
+      <!-- AUDITOR entity (auditor-only) -->
+      <div class="nav-section" id="auditor-nav-section" style="display:none;">
+        <div class="nav-label">Records</div>
+        <div class="nav-item" data-page="masterlist">
+          <span class="nav-icon">📋</span> Masterlist
+        </div>
+        <div class="nav-item" data-page="wfh-schedule">
+          <span class="nav-icon">🏠</span> WFH Schedule
+        </div>
+      </div>
+
+      <!-- ATTENDANCE entity (auditor) -->
+      <div class="nav-section" id="auditor-attendance-nav-section" style="display:none;">
+        <div class="nav-label">Attendance</div>
+        <div class="nav-item" data-page="monthly-attendance">
+          <span class="nav-icon">📅</span> Monthly Attendance (ILC)
+        </div>
+        <div class="nav-item" data-page="monday-attendance">
+          <span class="nav-icon">🗓️</span> Monthly Attendance (Monday.com)
         </div>
       </div>
     </nav>
@@ -3080,8 +3305,14 @@
     <div style="padding:10px 14px 0;">
       <button class="admin-lock-btn" id="auth-sidebar-button" onclick="openAuthModal()" title="Sign in" style="width:100%;justify-content:center;">Sign in</button>
     </div>
+    <!-- Master Sync button (admin-only) -->
+    <div id="master-sync-btn-wrap" style="padding:6px 14px 0;display:none;">
+      <button class="admin-lock-btn" id="master-sync-btn" onclick="runMasterSync()" title="Re-sync Serial Nos, Names & Emails across all records" style="width:100%;justify-content:center;">
+        <span>⚡ Master Sync</span>
+      </button>
+    </div>
     <!-- Admin lock button -->
-    <div style="padding:10px 14px 6px;">
+    <div style="padding:6px 14px 6px;">
       <button class="admin-lock-btn" id="admin-lock-btn" onclick="openAdminModal()" title="Configure Dashboard" style="width:100%;justify-content:center;">
         <span id="admin-lock-label">Configure</span>
       </button>
@@ -3125,7 +3356,7 @@
       <div class="glow-line"></div>
       <div class="section-header">
         <div>
-          <div class="section-title">Pending Audit Review</div>
+          <div class="section-title">Variance Review</div>
           <div class="section-subtitle" id="audit-reviews-subtitle">Variance submissions awaiting your review.</div>
         </div>
         <button class="btn btn-ghost btn-sm" onclick="loadAuditReviews()">Refresh</button>
@@ -3133,11 +3364,249 @@
       <div id="audit-reviews-body"></div>
     </div>
 
+    <!-- ══════════════════ ONBOARD NEW EMPLOYEE PAGE ══════════════════ -->
+    <div class="page" id="page-onboard-employee">
+      <div class="glow-line"></div>
+      <div class="section-header">
+        <div>
+          <div class="section-title">Onboard New Employee</div>
+          <div class="section-subtitle">Add a new employee to the ODC SEET Masterlist.</div>
+        </div>
+        <button class="btn btn-primary" onclick="openOnboardModal()">＋ Onboard Employee</button>
+      </div>
+      <div id="onboard-employee-body">
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr><th>IBM Serial No.</th><th>Name</th><th>Email</th><th>Service Line</th><th>Status</th></tr></thead>
+            <tbody id="onboard-employee-tbody">
+              <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;"><div class="empty-icon" style="font-size:36px;opacity:.45;">🧑‍💼</div><div style="font-weight:600;margin-top:8px;">No onboarding records</div><div style="font-size:12px;margin-top:4px;">Use the button above to onboard a new employee.</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════ SERVICE LINES PAGE ══════════════════ -->
+    <div class="page" id="page-service-lines">
+      <div class="glow-line"></div>
+      <div class="section-header">
+        <div>
+          <div class="section-title">Service Lines</div>
+          <div class="section-subtitle">Manage service line codes and descriptions.</div>
+        </div>
+        <button class="btn btn-primary" onclick="openAddServiceLineModal()">＋ Add Service Line</button>
+      </div>
+      <div id="service-lines-body">
+        <div class="admin-table-wrap">
+          <table class="admin-table" id="service-lines-table">
+            <thead><tr><th>Code</th><th>Name</th><th>Description</th><th></th></tr></thead>
+            <tbody id="service-lines-tbody">
+              <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:32px;">No service lines yet. Click <strong>Add Service Line</strong> to get started.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════ MASTERLIST PAGE ══════════════════ -->
+    <div class="page" id="page-masterlist">
+      <div class="glow-line"></div>
+      <div class="section-header">
+        <div>
+          <div class="section-title">ODC SEET Masterlist</div>
+          <div class="section-subtitle">Employee masterlist — auto-populated from ILC Attendance uploads.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-danger btn-sm" onclick="openResetMasterlistModal()">🗑 Reset List</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadMasterlist()">Refresh</button>
+        </div>
+      </div>
+      <div id="masterlist-body">
+        <div class="admin-table-wrap">
+          <table class="admin-table" id="masterlist-table">
+            <thead><tr><th>IBM Serial No.</th><th>Name</th><th>Email</th><th>Service Line</th><th>Status</th><th></th></tr></thead>
+            <tbody id="masterlist-tbody">
+              <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">No records. Upload a masterlist CSV or add employees via Onboarding.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════ WFH SCHEDULE MAINTENANCE PAGE ══════════════════ -->
+    <div class="page" id="page-wfh-schedule">
+      <div class="glow-line"></div>
+      <div class="section-header">
+        <div>
+          <div class="section-title">WFH Schedule Maintenance</div>
+          <div class="section-subtitle">Manage work-from-home schedules per employee.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <label class="btn btn-ghost" style="cursor:pointer;">
+            📤 Upload WFH Schedule
+            <input type="file" id="wfh-upload-input" accept=".csv,.xlsx" style="display:none;" onchange="handleWfhUpload(event)" />
+          </label>
+          <button class="btn btn-primary" onclick="openAddWfhModal()">＋ Add Record</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadWfhSchedule()">Refresh</button>
+        </div>
+      </div>
+      <div id="wfh-schedule-body">
+        <div class="admin-table-wrap">
+          <table class="admin-table" id="wfh-table">
+            <thead><tr><th>Name</th><th>Email</th><th>WFH Day 1</th><th>WFH Day 2</th><th></th></tr></thead>
+            <tbody id="wfh-tbody">
+              <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">No WFH records found.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════ MONTHLY ATTENDANCE (ILC) PAGE ══════════════════ -->
+    <div class="page" id="page-monthly-attendance">
+      <div class="glow-line"></div>
+      <div class="section-header">
+        <div>
+          <div class="section-title">Monthly Attendance (ILC)</div>
+          <div class="section-subtitle">ILC attendance records by month.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <label class="btn btn-primary" style="cursor:pointer;">
+            📤 Upload Monthly Attendance (ILC)
+            <input type="file" id="monthly-att-upload-input" accept=".csv,.xlsx" style="display:none;" onchange="handleMonthlyAttUpload(event)" />
+          </label>
+          <button class="btn btn-ghost btn-sm" onclick="loadMonthlyAttendance(true)">↻ Refresh</button>
+          <button class="btn btn-danger btn-sm" onclick="openDeleteAttReportModal('ilc')">🗑 Delete Report</button>
+        </div>
+      </div>
+      <div class="page-toolbar">
+        <select id="monthly-att-year" onchange="filterMonthlyAtt()"><option value="">Year</option></select>
+        <select id="monthly-att-month" onchange="filterMonthlyAtt()">
+          <option value="">Month</option>
+          <option>January</option><option>February</option><option>March</option>
+          <option>April</option><option>May</option><option>June</option>
+          <option>July</option><option>August</option><option>September</option>
+          <option>October</option><option>November</option><option>December</option>
+        </select>
+        <select id="monthly-att-weekending" onchange="filterMonthlyAtt()"><option value="">Weekending (All)</option></select>
+        <select id="monthly-att-email" onchange="filterMonthlyAtt()"><option value="">Email (All)</option></select>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 0 4px;justify-content:flex-end;">
+        <span style="font-size:11px;color:var(--muted);font-weight:600;margin-right:4px;letter-spacing:.04em;">ACTIVITY LEGEND</span>
+        <span class="tag" style="background:rgba(16,185,129,0.06);color:#6b7280;border-color:rgba(107,114,128,0.2);" title="General Billable">GB</span>
+        <span class="tag tag-green"  title="Vacation Leave">VL</span>
+        <span class="tag tag-yellow" title="Sick Leave">SL</span>
+        <span class="tag tag-blue"   title="Designated Holiday">HOL</span>
+        <span class="tag tag-cyan"   title="Optional Holiday">OHOL</span>
+        <span class="tag tag-purple" title="Compensatory Day Off">CDO</span>
+        <span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid rgba(236,72,153,0.25);background:rgba(236,72,153,0.10);color:#be185d;" title="Parenting Leave">PRNT</span>
+        <span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid rgba(245,158,11,0.25);background:rgba(245,158,11,0.10);color:#92400e;" title="Paid Time Not Worked">PTNW</span>
+        <span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid rgba(239,68,68,0.25);background:rgba(239,68,68,0.10);color:#991b1b;" title="Unpaid Time Not Worked">UTNW</span>
+        <span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid rgba(107,114,128,0.25);background:rgba(107,114,128,0.10);color:#374151;" title="Pre/Post IBM Employment">EMPL</span>
+      </div>
+      <div id="monthly-att-body">
+        <div class="ilc-table-wrap">
+          <table class="ilc-table" id="monthly-att-table">
+            <colgroup>
+              <col class="col-serial"><col class="col-name"><col class="col-acct">
+              <col class="col-we"><col class="col-act">
+              <col class="col-day"><col class="col-day">
+              <col class="col-day"><col class="col-day"><col class="col-day"><col class="col-day"><col class="col-day">
+              <col class="col-total"><col class="col-ot"><col class="col-vl"><col class="col-sl">
+            </colgroup>
+            <thead id="monthly-att-thead"><tr>
+              <th class="col-serial">IBM Serial No.</th><th class="col-name">Name</th><th class="col-acct">Email</th>
+              <th class="col-we">Weekending</th><th class="col-act">Activity</th>
+              <th class="col-day ilc-weekend">Sat</th><th class="col-day ilc-weekend">Sun</th>
+              <th class="col-day">Mon</th><th class="col-day">Tue</th><th class="col-day">Wed</th><th class="col-day">Thu</th><th class="col-day">Fri</th>
+              <th class="col-total">Total Hrs</th><th class="col-ot">OT Hrs</th>
+              <th class="col-vl">VL</th><th class="col-sl">SL</th>
+            </tr></thead>
+            <tbody id="monthly-att-tbody">
+              <tr><td colspan="16" style="text-align:center;color:var(--muted);padding:32px;">Select a year and month, or upload an ILC file to see records.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════ MONTHLY ATTENDANCE (MONDAY.COM) PAGE ══════════════════ -->
+    <div class="page" id="page-monday-attendance">
+      <div class="glow-line"></div>
+      <div class="section-header">
+        <div>
+          <div class="section-title">Monthly Attendance (Monday.com)</div>
+          <div class="section-subtitle">Monday.com attendance records by month.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <label class="btn btn-primary" style="cursor:pointer;">
+            📤 Upload Monthly Attendance (Monday.com)
+            <input type="file" id="monday-att-upload-input" accept=".csv,.xlsx" style="display:none;" onchange="handleMondayAttUpload(event)" />
+          </label>
+          <button class="btn btn-ghost btn-sm" onclick="loadMondayAttendance(true)">↻ Refresh</button>
+          <button class="btn btn-danger btn-sm" onclick="openDeleteAttReportModal('monday')">🗑 Delete Report</button>
+        </div>
+      </div>
+      <div class="page-toolbar">
+        <select id="monday-att-year" onchange="filterMondayAtt()"><option value="">Year</option></select>
+        <select id="monday-att-month" onchange="filterMondayAtt()">
+          <option value="">Month</option>
+          <option>January</option><option>February</option><option>March</option>
+          <option>April</option><option>May</option><option>June</option>
+          <option>July</option><option>August</option><option>September</option>
+          <option>October</option><option>November</option><option>December</option>
+        </select>
+        <select id="monday-att-email" onchange="filterMondayAtt()"><option value="">Email (All)</option></select>
+        <select id="monday-att-group" onchange="filterMondayAtt()"><option value="">Group (All)</option></select>
+      </div>
+      <div id="monday-att-body">
+        <div class="admin-table-wrap">
+          <table class="admin-table" id="monday-att-table">
+            <thead><tr>
+              <th>IBM Serial No.</th><th>Name</th><th>Email</th>
+              <th>Date</th><th>Group</th><th>Status</th><th>Duration</th>
+            </tr></thead>
+            <tbody id="monday-att-tbody">
+              <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Select a year and month, or upload a Monday file to see records.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /main -->
 </div><!-- /app -->
 
 <!-- TOAST CONTAINER -->
 <div class="toast-container" id="toast-container"></div>
+
+
+<!-- ══════════════════ UPLOAD PREVIEW MODAL ══════════════════ -->
+<div class="upload-modal-overlay" id="upload-preview-overlay" onclick="closeUploadPreview()">
+  <div class="upload-modal" onclick="event.stopPropagation()">
+    <div class="upload-modal-header">
+      <div>
+        <div class="upload-modal-title" id="upload-preview-title">Preview Upload</div>
+        <div class="upload-modal-sub"  id="upload-preview-sub"></div>
+      </div>
+      <button class="upload-modal-close" onclick="closeUploadPreview()">✕</button>
+    </div>
+    <div class="upload-col-map" id="upload-col-map"></div>
+    <div class="upload-preview-wrap">
+      <table class="upload-preview-table" id="upload-preview-table">
+        <thead id="upload-preview-thead"></thead>
+        <tbody id="upload-preview-tbody"></tbody>
+      </table>
+    </div>
+    <div id="upload-preview-warn"></div>
+    <div class="upload-modal-footer">
+      <div class="upload-modal-count" id="upload-preview-count"></div>
+      <button class="btn btn-ghost" onclick="closeUploadPreview()">Cancel</button>
+      <button class="btn btn-primary" id="upload-confirm-btn" onclick="_maybeFinalConfirm()">Upload</button>
+    </div>
+  </div>
+</div>
+
 
 <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• MODALS â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 
@@ -3151,7 +3620,64 @@
   </div>
 </div>
 
-<!-- Variance Updated â€” Confirm modal -->
+<!-- Reset Masterlist — Confirmation modal -->
+<div class="admin-modal-overlay" id="reset-masterlist-overlay" onclick="if(event.target===this)closeResetMasterlistModal()">
+  <div class="admin-modal" onclick="event.stopPropagation()">
+    <div class="admin-modal-icon">⚠️</div>
+    <div class="admin-modal-title">Reset Masterlist?</div>
+    <div class="admin-modal-sub">
+      This will <strong>permanently delete all records</strong> from the masterlist.<br><br>
+      The masterlist is used to validate employees across the entire system — including attendance records, WFH schedules, and onboarding. Resetting it <strong>may affect all related data</strong>.<br><br>
+      After resetting, you must <strong>re-upload an updated masterlist</strong> to restore access for all users.
+    </div>
+    <div id="reset-masterlist-error" style="font-size:12px;color:var(--danger);min-height:16px;margin-bottom:8px;"></div>
+    <div class="admin-modal-actions">
+      <button class="btn btn-ghost" onclick="closeResetMasterlistModal()">Cancel</button>
+      <button class="btn btn-danger" id="reset-masterlist-confirm-btn" onclick="confirmResetMasterlist()">Yes, Reset Masterlist</button>
+    </div>
+  </div>
+</div>
+
+<!-- Upload Final Confirm modal (WFH + Attendance) -->
+<div class="admin-modal-overlay" id="upload-final-confirm-overlay" onclick="if(event.target===this)closeUploadFinalConfirm()">
+  <div class="admin-modal" onclick="event.stopPropagation()">
+    <div class="admin-modal-icon">📋</div>
+    <div class="admin-modal-title" id="upload-final-confirm-title">Confirm Upload</div>
+    <div class="admin-modal-sub" id="upload-final-confirm-msg"></div>
+    <div class="admin-modal-actions">
+      <button class="btn btn-ghost" onclick="closeUploadFinalConfirm()">Cancel</button>
+      <button class="btn btn-primary" id="upload-final-confirm-btn" onclick="proceedAfterFinalConfirm()">Confirm & Upload</button>
+    </div>
+  </div>
+</div>
+
+<!-- Upload Incomplete Month Warning modal -->
+<div class="admin-modal-overlay" id="upload-incomplete-month-overlay" onclick="if(event.target===this)closeIncompleteMonthModal()">
+  <div class="admin-modal" onclick="event.stopPropagation()">
+    <div class="admin-modal-icon">🚫</div>
+    <div class="admin-modal-title">Incomplete Month Data</div>
+    <div class="admin-modal-sub" id="upload-incomplete-month-msg"></div>
+    <div class="admin-modal-actions">
+      <button class="btn btn-primary" onclick="closeIncompleteMonthModal()">OK, I'll Fix the File</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Attendance Report modal -->
+<div class="admin-modal-overlay" id="delete-att-report-overlay" onclick="if(event.target===this)closeDeleteAttReportModal()">
+  <div class="admin-modal" onclick="event.stopPropagation()">
+    <div class="admin-modal-icon">🗑️</div>
+    <div class="admin-modal-title">Delete Report Records</div>
+    <div class="admin-modal-sub" id="delete-att-report-sub"></div>
+    <div id="delete-att-report-error" style="font-size:12px;color:var(--danger);min-height:16px;margin-bottom:8px;"></div>
+    <div class="admin-modal-actions">
+      <button class="btn btn-ghost" onclick="closeDeleteAttReportModal()">Cancel</button>
+      <button class="btn btn-danger" id="delete-att-report-confirm-btn" onclick="confirmDeleteAttReport()">Delete Records</button>
+    </div>
+  </div>
+</div>
+
+<!-- Variance Updated â€" Confirm modal -->
 <div class="vr-overlay" id="vr-confirm-overlay" style="display:none;" onclick="if(event.target===this)cancelVarianceUpdated()">
   <div class="vr-modal" onclick="event.stopPropagation()">
     <div class="vr-modal-title">Send variances for review?</div>
@@ -3218,6 +3744,117 @@
     <div class="admin-modal-actions">
       <button class="btn btn-ghost" onclick="closeAdminModal()">Cancel</button>
       <button class="btn btn-primary" onclick="submitAdminPasscode()">Unlock</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Onboard New Employee Modal ══ -->
+<div class="modal-overlay" id="modal-onboard-employee" onclick="if(event.target===this)closeModal('modal-onboard-employee')">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Onboard New Employee</div>
+      <button class="modal-close" onclick="closeModal('modal-onboard-employee')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">IBM Serial No. *</label>
+        <input class="form-input" id="onboard-serial" placeholder="e.g. P102HG" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Name *</label>
+        <input class="form-input" id="onboard-name" placeholder="Full Name" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email *</label>
+        <input class="form-input" id="onboard-email" type="email" placeholder="name@ph.ibm.com" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Service Line</label>
+        <select class="form-select" id="onboard-service-line">
+          <option value="">— Select service line —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Status</label>
+        <input class="form-input" value="Active" disabled style="opacity:0.6;cursor:not-allowed;" />
+      </div>
+      <div id="onboard-error" style="font-size:12px;color:var(--danger);min-height:16px;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-onboard-employee')">Cancel</button>
+      <button class="btn btn-primary" id="onboard-save-btn" onclick="saveOnboardEmployee()">Save Employee</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Add Service Line Modal ══ -->
+<div class="modal-overlay" id="modal-add-service-line" onclick="if(event.target===this)closeModal('modal-add-service-line')">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="service-line-modal-title">Add Service Line</div>
+      <button class="modal-close" onclick="closeModal('modal-add-service-line')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Code *</label>
+        <input class="form-input" id="sl-code" placeholder="e.g. DEV" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Name *</label>
+        <input class="form-input" id="sl-name" placeholder="e.g. Development" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea class="form-textarea" id="sl-description" placeholder="Brief description of this service line…"></textarea>
+      </div>
+      <div id="sl-error" style="font-size:12px;color:var(--danger);min-height:16px;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-service-line')">Cancel</button>
+      <button class="btn btn-primary" id="sl-save-btn" onclick="saveServiceLine()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Add WFH Schedule Record Modal ══ -->
+<div class="modal-overlay" id="modal-add-wfh" onclick="if(event.target===this)closeModal('modal-add-wfh')">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Add WFH Record</div>
+      <button class="modal-close" onclick="closeModal('modal-add-wfh')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Name *</label>
+        <input class="form-input" id="wfh-modal-name" placeholder="Full Name" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email *</label>
+        <input class="form-input" id="wfh-modal-email" type="email" placeholder="name@ph.ibm.com" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">WFH Day 1</label>
+          <select class="form-select" id="wfh-modal-day1">
+            <option value="">— Select —</option>
+            <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
+            <option>Thursday</option><option>Friday</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">WFH Day 2</label>
+          <select class="form-select" id="wfh-modal-day2">
+            <option value="">— Select —</option>
+            <option>Monday</option><option>Tuesday</option><option>Wednesday</option>
+            <option>Thursday</option><option>Friday</option>
+          </select>
+        </div>
+      </div>
+      <div id="wfh-error" style="font-size:12px;color:var(--danger);min-height:16px;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-wfh')">Cancel</button>
+      <button class="btn btn-primary" id="wfh-save-btn" onclick="saveWfhRecord()">Save</button>
     </div>
   </div>
 </div>
@@ -3444,6 +4081,9 @@ function initFirebase() {
     _fbApp = firebase.apps.length ? firebase.app() : firebase.initializeApp(FB_FIRESTORE_CONFIG);
     _fbDb = firebase.firestore(_fbApp);
     _fbDb.settings({ experimentalAutoDetectLongPolling: true, merge: true });
+    // IndexedDB persistence: serves reads from local cache, survives quota throttling.
+    // Errors ('failed-precondition', 'unimplemented') are non-fatal — ignore silently.
+    _fbDb.enablePersistence({ synchronizeTabs: true }).catch(function() {});
     firebase.auth().onAuthStateChanged(handleAuthState);
     setFbStatus('connected', 'Private access');
   } catch(err) {
@@ -3478,11 +4118,17 @@ function initDate() {
 }
 
 // ──────────────────────────────────────────────
-// NAVIGATION (variance pages only)
+// NAVIGATION
 // ──────────────────────────────────────────────
 const PAGE_TITLES = {
-  'my-variances':  'My Variances',
-  'audit-reviews': 'Pending Audit Review',
+  'my-variances':       'My Variances',
+  'audit-reviews':      'Variance Review',
+  'onboard-employee':   'Onboard New Employee',
+  'service-lines':      'Service Lines',
+  'masterlist':         'ODC SEET Masterlist',
+  'wfh-schedule':       'WFH Schedule Maintenance',
+  'monthly-attendance': 'Monthly Attendance (ILC)',
+  'monday-attendance':  'Monthly Attendance (Monday.com)',
 };
 
 let currentPage = 'my-variances';
@@ -3490,20 +4136,41 @@ let currentPage = 'my-variances';
 function navigate(page) {
   if (!PAGE_TITLES[page]) return;
   document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
-  document.querySelectorAll('.nav-item').forEach(function(n) { n.classList.remove('active'); });
+  document.querySelectorAll('.nav-item, .nav-sub-item').forEach(function(n) { n.classList.remove('active'); });
   const pageEl = document.getElementById('page-' + page);
   if (pageEl) pageEl.classList.add('active');
   const navEl = document.querySelector('[data-page="' + page + '"]');
   if (navEl) navEl.classList.add('active');
   currentPage = page;
-  if (page === 'my-variances') loadMyVariances();
-  if (page === 'audit-reviews') loadAuditReviews();
+  if (page === 'my-variances')       loadMyVariances();
+  if (page === 'audit-reviews')      loadAuditReviews();
+  if (page === 'onboard-employee')   loadOnboardRecords();
+  if (page === 'service-lines')      loadServiceLines();
+  if (page === 'masterlist')         loadMasterlist();
+  if (page === 'wfh-schedule')       loadWfhSchedule();
+  if (page === 'monthly-attendance') loadMonthlyAttendance();
+  if (page === 'monday-attendance')  loadMondayAttendance();
   closeSidebar();
 }
 
 document.querySelectorAll('.nav-item').forEach(function(el) {
   el.addEventListener('click', function() { navigate(el.dataset.page); });
 });
+
+// Sub-nav items (admin pages)
+document.querySelectorAll('.nav-sub-item').forEach(function(el) {
+  el.addEventListener('click', function() { navigate(el.dataset.page); });
+});
+
+// Accordion toggle for sub-nav parents
+function toggleNavParent(key) {
+  const parent  = document.getElementById('nav-parent-' + key);
+  const subList = document.getElementById('nav-sub-' + key);
+  if (!parent || !subList) return;
+  const isOpen = subList.classList.contains('open');
+  subList.classList.toggle('open', !isOpen);
+  parent.classList.toggle('open', !isOpen);
+}
 
 // Mobile sidebar toggle
 function toggleSidebar() {
@@ -3533,6 +4200,18 @@ function showToast(msg, icon) {
     t.style.transition = 'opacity 0.4s';
     setTimeout(function() { t.remove(); }, 400);
   }, 2800);
+}
+
+// ──────────────────────────────────────────────
+// MODAL HELPERS
+// ──────────────────────────────────────────────
+function openModal(id) {
+  var el = document.getElementById(id);
+  if (el) el.classList.add('open');
+}
+function closeModal(id) {
+  var el = document.getElementById(id);
+  if (el) el.classList.remove('open');
 }
 
 // ──────────────────────────────────────────────
@@ -3617,7 +4296,16 @@ function handleAuthState(user) {
     const role = _authProfile.role || 'user';
     _authProfile.role = role;
     document.getElementById('admin-import-button').style.display = role === 'admin' ? '' : 'none';
-    document.getElementById('nav-audit-reviews').style.display = role === 'audit' ? '' : 'none';
+    document.getElementById('nav-audit-reviews').style.display = (role === 'admin' || role === 'audit') ? '' : 'none';
+    // Show admin nav sections for admins
+    var isAdmin   = role === 'admin';
+    var isAuditor = role === 'audit';
+    document.getElementById('admin-nav-section').style.display              = isAdmin   ? '' : 'none';
+    document.getElementById('attendance-nav-section').style.display         = isAdmin   ? '' : 'none';
+    document.getElementById('auditor-nav-section').style.display            = isAuditor ? '' : 'none';
+    document.getElementById('auditor-attendance-nav-section').style.display = isAuditor ? '' : 'none';
+    document.getElementById('master-sync-btn-wrap').style.display           = isAdmin   ? '' : 'none';
+    if (isAdmin) populateOnboardServiceLineDropdown();
     if (_authProfile.mustChangePassword) {
       document.getElementById('auth-modal-title').textContent = 'Update your password';
       document.getElementById('auth-modal-sub').textContent = 'Set a new password before viewing your variances.';
@@ -3949,8 +4637,8 @@ function formatReviewDate(ts) {
 async function loadAuditReviews() {
   const body     = document.getElementById('audit-reviews-body');
   const subtitle = document.getElementById('audit-reviews-subtitle');
-  if (!_authUser || !_authProfile || _authProfile.role !== 'audit') {
-    body.innerHTML = '<div class="ar-empty"><strong>Access denied</strong>Sign in as an Auditor to view submissions.</div>';
+  if (!_authUser || !_authProfile || (_authProfile.role !== 'audit' && _authProfile.role !== 'admin')) {
+    body.innerHTML = '<div class="ar-empty"><strong>Access denied</strong>Sign in as an Admin or Auditor to view submissions.</div>';
     return;
   }
   subtitle.textContent = 'Loading submissions\u2026';
@@ -3959,28 +4647,49 @@ async function loadAuditReviews() {
     const usersSnap = await _fbDb.collection('users').get();
     const userMap   = {};
     usersSnap.forEach(function(d) { userMap[d.id] = d.data(); });
-    const reviewPromises = usersSnap.docs.map(function(d) {
-      return _fbDb.collection('users').doc(d.id).collection('varianceReviews')
-        .orderBy('submittedAt', 'desc').get()
-        .then(function(snap) { return snap.docs.map(function(r) { return Object.assign({ reviewId: r.id, userId: d.id }, r.data()); }); })
-        .catch(function() { return []; });
+
+    // Fetch varianceReviews + variances for each user in parallel
+    const perUserPromises = usersSnap.docs.map(function(d) {
+      const uid = d.id;
+      return Promise.all([
+        _fbDb.collection('users').doc(uid).collection('varianceReviews')
+          .orderBy('submittedAt', 'desc').get()
+          .then(function(snap) { return snap.docs.map(function(r) { return Object.assign({ reviewId: r.id, userId: uid }, r.data()); }); })
+          .catch(function() { return []; }),
+        _fbDb.collection('users').doc(uid).collection('variances')
+          .orderBy('date', 'desc').get()
+          .then(function(snap) { return snap.docs.map(function(v) { return Object.assign({ _docId: v.id }, v.data()); }); })
+          .catch(function() { return []; })
+      ]).then(function(res) { return { reviews: res[0], variances: res[1] }; });
     });
-    const all = (await Promise.all(reviewPromises)).flat();
-    const pendingCount = all.filter(function(r) { return r.status === 'pending'; }).length;
+
+    const perUser = await Promise.all(perUserPromises);
+    const variancesByUser = {};
+    const allReviews = [];
+    usersSnap.docs.forEach(function(d, i) {
+      variancesByUser[d.id] = perUser[i].variances;
+      perUser[i].reviews.forEach(function(r) { allReviews.push(r); });
+    });
+
+    const pendingCount = allReviews.filter(function(r) { return r.status === 'pending'; }).length;
     const badge = document.getElementById('ar-nav-badge');
     badge.textContent = pendingCount;
     badge.classList.toggle('hidden', pendingCount === 0);
-    subtitle.textContent = all.length ? (all.length + ' submission' + (all.length !== 1 ? 's' : '') + ' found') : 'No submissions yet.';
-    renderAuditReviews(all, userMap);
+    subtitle.textContent = allReviews.length
+      ? (allReviews.length + ' submission' + (allReviews.length !== 1 ? 's' : '') + ' found')
+      : 'No submissions yet.';
+    renderAuditReviews(allReviews, userMap, variancesByUser);
   } catch (err) {
     console.error('Audit review load error:', err);
     body.innerHTML = '<div class="ar-empty"><strong>Unable to load submissions</strong>Please try again later.</div>';
   }
 }
 
-function renderAuditReviews(reviews, userMap) {
-  const body = document.getElementById('audit-reviews-body');
+function renderAuditReviews(reviews, userMap, variancesByUser) {
+  const body      = document.getElementById('audit-reviews-body');
+  const canWrite  = _authProfile && _authProfile.role === 'audit';
   if (!reviews.length) { body.innerHTML = '<div class="ar-empty"><strong>All clear!</strong>No variance submissions to review.</div>'; return; }
+
   const cards = reviews.map(function(r) {
     const profile   = userMap[r.userId] || {};
     const name      = profile.name || profile.talentId || r.talentId || r.email || r.userId;
@@ -3990,17 +4699,42 @@ function renderAuditReviews(reviews, userMap) {
     const statusCls = r.status === 'completed' ? 'ar-status-completed' : r.status === 'rejected' ? 'ar-status-rejected' : 'ar-status-pending';
     const statusLbl = r.status === 'completed' ? 'Completed' : r.status === 'rejected' ? 'Rejected' : 'Pending';
     const isPending = r.status === 'pending';
-    const actionBtns = isPending
+
+    // Variance table for this submitter
+    const variances = (variancesByUser && variancesByUser[r.userId]) || [];
+    var varianceTable = '';
+    if (variances.length) {
+      const headerCols = VARIANCE_FIELDS
+        .filter(function(f) { return f[0] !== '_updated'; })
+        .map(function(f) { return '<th>' + f[1] + '</th>'; }).join('');
+      const dataRows = variances.map(function(record) {
+        return '<tr>' + VARIANCE_FIELDS
+          .filter(function(f) { return f[0] !== '_updated'; })
+          .map(function(f) { return buildVarianceCell(f[0], record, {}); }).join('') + '</tr>';
+      }).join('');
+      varianceTable =
+        '<div class="variance-table-wrap" style="margin-top:12px;">' +
+          '<table class="variance-table">' +
+            '<thead><tr>' + headerCols + '</tr></thead>' +
+            '<tbody>' + dataRows + '</tbody>' +
+          '</table>' +
+        '</div>';
+    }
+
+    // Action buttons — auditor only
+    const actionBtns = (canWrite && isPending)
       ? '<button class="btn btn-sm" style="background:var(--success);color:#fff;border:none;font-weight:700;border-radius:10px;padding:7px 16px;cursor:pointer;" onclick="approveReview(\'' + r.reviewId + '\',\'' + r.userId + '\',this)">Approve</button>' +
         '<button class="btn btn-sm" style="background:var(--danger);color:#fff;border:none;font-weight:700;border-radius:10px;padding:7px 16px;cursor:pointer;" onclick="openRejectCompose(\'' + r.reviewId + '\',\'' + r.userId + '\',\'' + escapeHtml(email) + '\',\'' + escapeHtml(talentId) + '\',this)">Reject</button>'
       : '';
+
     return '<div class="ar-card" id="ar-card-' + r.reviewId + '">' +
       '<div class="ar-card-header"><div class="ar-card-meta">' +
-      '<div class="ar-card-name">' + escapeHtml(name) + '</div>' +
-      '<div class="ar-card-sub">' + (email ? escapeHtml(email) + ' \u00b7 ' : '') + (talentId ? 'ID: ' + escapeHtml(talentId) + ' \u00b7 ' : '') + dateStr + '</div>' +
+        '<div class="ar-card-name">' + escapeHtml(name) + '</div>' +
+        '<div class="ar-card-sub">' + (email ? escapeHtml(email) + ' \u00b7 ' : '') + (talentId ? 'ID: ' + escapeHtml(talentId) + ' \u00b7 ' : '') + dateStr + '</div>' +
       '</div><span class="ar-status-pill ' + statusCls + '">' + statusLbl + '</span></div>' +
       (r.explanation ? '<div class="ar-explanation">' + escapeHtml(r.explanation) + '</div>' : '') +
-      (isPending ? '<div class="ar-card-actions">' + actionBtns + '</div>' : '') +
+      varianceTable +
+      (actionBtns ? '<div class="ar-card-actions">' + actionBtns + '</div>' : '') +
       '</div>';
   }).join('');
   body.innerHTML = cards;
@@ -4062,6 +4796,1626 @@ async function sendRejectEmail() {
     errEl.textContent = 'Failed to reject. Please try again.';
     btn.disabled = false; btn.textContent = 'Send Reject Email';
   }
+}
+
+// ──────────────────────────────────────────────
+// ── ADMIN: MODAL HELPERS
+// ──────────────────────────────────────────────
+function openOnboardModal() {
+  if (!_authProfile || _authProfile.role !== 'admin') { showToast('Admin access required.', '🔒'); return; }
+  document.getElementById('onboard-serial').value = '';
+  document.getElementById('onboard-name').value   = '';
+  document.getElementById('onboard-email').value  = '';
+  document.getElementById('onboard-service-line').value = '';
+  document.getElementById('onboard-error').textContent = '';
+  populateOnboardServiceLineDropdown();
+  openModal('modal-onboard-employee');
+}
+
+function populateOnboardServiceLineDropdown() {
+  if (!_fbDb) return;
+  _fbDb.collection('serviceLines').orderBy('code').get().then(function(snap) {
+    var sel = document.getElementById('onboard-service-line');
+    if (!sel) return;
+    var opts = '<option value="">— Select service line —</option>';
+    snap.forEach(function(d) {
+      var sl = d.data();
+      opts += '<option value="' + escapeHtml(sl.code) + '">' + escapeHtml(sl.code) + ' – ' + escapeHtml(sl.name) + '</option>';
+    });
+    sel.innerHTML = opts;
+  }).catch(function() {});
+}
+
+async function saveOnboardEmployee() {
+  var serial  = (document.getElementById('onboard-serial').value || '').trim();
+  var name    = (document.getElementById('onboard-name').value   || '').trim();
+  var email   = (document.getElementById('onboard-email').value  || '').trim();
+  var sl      = document.getElementById('onboard-service-line').value;
+  var errEl   = document.getElementById('onboard-error');
+  errEl.textContent = '';
+  if (!serial) { errEl.textContent = 'IBM Serial No. is required.'; return; }
+  if (!name)   { errEl.textContent = 'Name is required.'; return; }
+  if (!email)  { errEl.textContent = 'Email is required.'; return; }
+  var btn = document.getElementById('onboard-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await _fbDb.collection('masterlist').add({
+      ibmSerialNo: serial, name: name, email: email,
+      serviceLine: sl, status: 'Active',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    closeModal('modal-onboard-employee');
+    showToast('Employee onboarded successfully.', '✅');
+    if (currentPage === 'masterlist') loadMasterlist();
+    if (currentPage === 'onboard-employee') loadOnboardRecords();
+  } catch(err) {
+    errEl.textContent = 'Failed to save. Please try again.';
+    console.error(err);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save Employee';
+  }
+}
+
+// ──────────────────────────────────────────────
+// ── ADMIN: SERVICE LINES
+// ──────────────────────────────────────────────
+var _editingServiceLineId = null;
+
+function openAddServiceLineModal(docId, existing) {
+  _editingServiceLineId = docId || null;
+  document.getElementById('service-line-modal-title').textContent = docId ? 'Edit Service Line' : 'Add Service Line';
+  document.getElementById('sl-code').value        = (existing && existing.code)        || '';
+  document.getElementById('sl-name').value        = (existing && existing.name)        || '';
+  document.getElementById('sl-description').value = (existing && existing.description) || '';
+  document.getElementById('sl-error').textContent = '';
+  openModal('modal-add-service-line');
+}
+
+async function saveServiceLine() {
+  var code = (document.getElementById('sl-code').value || '').trim().toUpperCase();
+  var name = (document.getElementById('sl-name').value || '').trim();
+  var desc = (document.getElementById('sl-description').value || '').trim();
+  var errEl = document.getElementById('sl-error');
+  errEl.textContent = '';
+  if (!code) { errEl.textContent = 'Code is required.'; return; }
+  if (!name) { errEl.textContent = 'Name is required.'; return; }
+  var btn = document.getElementById('sl-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    var data = { code: code, name: name, description: desc, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+    if (_editingServiceLineId) {
+      await _fbDb.collection('serviceLines').doc(_editingServiceLineId).update(data);
+    } else {
+      await _fbDb.collection('serviceLines').add(data);
+    }
+    closeModal('modal-add-service-line');
+    showToast('Service line saved.', '✅');
+    loadServiceLines();
+  } catch(err) {
+    errEl.textContent = 'Failed to save.';
+    console.error(err);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
+function loadServiceLines() {
+  if (!_fbDb) return;
+  var tbody = document.getElementById('service-lines-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>';
+  _fbDb.collection('serviceLines').orderBy('code').get().then(function(snap) {
+    if (snap.empty) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:32px;">No service lines yet. Click <strong>Add Service Line</strong> to get started.</td></tr>';
+      return;
+    }
+    var rows = '';
+    snap.forEach(function(d) {
+      var sl = d.data();
+      rows += '<tr>' +
+        '<td><span class="tag tag-blue">' + escapeHtml(sl.code || '') + '</span></td>' +
+        '<td>' + escapeHtml(sl.name || '') + '</td>' +
+        '<td>' + escapeHtml(sl.description || '') + '</td>' +
+        '<td style="white-space:nowrap;">' +
+          '<button class="btn btn-ghost btn-sm" onclick="openAddServiceLineModal(\'' + d.id + '\',{code:\'' + escapeHtml(sl.code||'') + '\',name:\'' + escapeHtml(sl.name||'') + '\',description:\'' + escapeHtml((sl.description||'').replace(/'/g,"\\\'")) + '\'})">Edit</button> ' +
+          '<button class="btn btn-danger btn-sm" onclick="deleteServiceLine(\'' + d.id + '\')">Delete</button>' +
+        '</td></tr>';
+    });
+    tbody.innerHTML = rows;
+  }).catch(function(err) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--danger);padding:16px;">Error loading service lines.</td></tr>';
+    console.error(err);
+  });
+}
+
+async function deleteServiceLine(docId) {
+  if (!confirm('Delete this service line?')) return;
+  try {
+    await _fbDb.collection('serviceLines').doc(docId).delete();
+    showToast('Service line deleted.', '🗑️');
+    loadServiceLines();
+  } catch(err) { showToast('Failed to delete.'); }
+}
+
+// ──────────────────────────────────────────────
+// ── ADMIN: MASTERLIST
+// ──────────────────────────────────────────────
+function loadMasterlist() {
+  if (!_fbDb) return;
+  var tbody = document.getElementById('masterlist-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>';
+  _fbDb.collection('masterlist').orderBy('name').get().then(function(snap) {
+    if (snap.empty) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">No records. Upload a masterlist CSV or add employees via Onboarding.</td></tr>';
+      return;
+    }
+    var rows = '';
+    snap.forEach(function(d) {
+      var e = d.data();
+      var statusPill = e.status === 'Active'
+        ? '<span class="pill-active">Active</span>'
+        : '<span class="pill-inactive">' + escapeHtml(e.status || 'Inactive') + '</span>';
+      rows += '<tr>' +
+        '<td>' + escapeHtml(e.ibmSerialNo || '') + '</td>' +
+        '<td>' + escapeHtml(e.name || '') + '</td>' +
+        '<td>' + escapeHtml(e.email || '') + '</td>' +
+        '<td><span class="tag tag-blue">' + escapeHtml(e.serviceLine || '') + '</span></td>' +
+        '<td>' + statusPill + '</td>' +
+        '<td style="white-space:nowrap;">' +
+          '<button class="btn btn-ghost btn-sm" onclick="toggleMasterlistStatus(\'' + d.id + '\',\'' + escapeHtml(e.status||'Active') + '\')">' + (e.status === 'Active' ? 'Set Inactive' : 'Set Active') + '</button>' +
+        '</td></tr>';
+    });
+    tbody.innerHTML = rows;
+  }).catch(function(err) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--danger);padding:16px;">Error loading masterlist.</td></tr>';
+    console.error(err);
+  });
+}
+
+async function toggleMasterlistStatus(docId, currentStatus) {
+  var newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
+  try {
+    await _fbDb.collection('masterlist').doc(docId).update({ status: newStatus });
+    showToast('Status updated to ' + newStatus + '.', '✅');
+    loadMasterlist();
+  } catch(err) { showToast('Failed to update status.'); }
+}
+
+// ──────────────────────────────────────────────
+// ── MASTERLIST RESET
+// ──────────────────────────────────────────────
+function openResetMasterlistModal() {
+  document.getElementById('reset-masterlist-error').textContent = '';
+  var btn = document.getElementById('reset-masterlist-confirm-btn');
+  btn.disabled = false; btn.textContent = 'Yes, Reset Masterlist';
+  document.getElementById('reset-masterlist-overlay').classList.add('open');
+}
+
+function closeResetMasterlistModal() {
+  document.getElementById('reset-masterlist-overlay').classList.remove('open');
+}
+
+async function confirmResetMasterlist() {
+  var btn  = document.getElementById('reset-masterlist-confirm-btn');
+  var errEl = document.getElementById('reset-masterlist-error');
+  btn.disabled = true; btn.textContent = 'Resetting…';
+  errEl.textContent = '';
+  try {
+    var snap = await _fbDb.collection('masterlist').get();
+    var BATCH_SIZE = 490;
+    var docs  = snap.docs;
+    for (var i = 0; i < docs.length; i += BATCH_SIZE) {
+      var batch = _fbDb.batch();
+      docs.slice(i, i + BATCH_SIZE).forEach(function(d) { batch.delete(d.ref); });
+      await batch.commit();
+    }
+    closeResetMasterlistModal();
+    showToast('Masterlist cleared. Please upload an updated list.', '🗑️');
+    loadMasterlist();
+    loadOnboardRecords();
+  } catch(err) {
+    console.error('Reset masterlist error:', err);
+    errEl.textContent = 'Failed to reset. Please try again.';
+    btn.disabled = false; btn.textContent = 'Yes, Reset Masterlist';
+  }
+}
+
+function handleMasterlistUpload(event) {
+  var file = event.target.files && event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+  _parseUploadFile(file, function(rows) {
+    var schema = {
+      title:      'Upload Masterlist',
+      sub:        file.name,
+      collection: 'masterlist',
+      idField:    'ibmSerialNo',
+      columns: [
+        { label: 'IBM Serial No.', key: 'ibmSerialNo',  aliases: ['ibm serial no','ibm serial no.','ibm serial','serialno','serial no','serial number','serialnumber'] },
+        { label: 'Name',           key: 'name',         aliases: ['name','full name','fullname','employee name'] },
+        { label: 'Email',          key: 'email',        aliases: ['email','email address','emailaddress','e-mail'] },
+        { label: 'Service Line',   key: 'serviceLine',  aliases: ['service line','serviceline','sl','service line code'] },
+        { label: 'Status',         key: 'status',       aliases: ['status','employment status'], default: 'Active' }
+      ],
+      onSuccess: function() { loadMasterlist(); loadOnboardRecords(); }
+    };
+    _openUploadPreview(rows, schema);
+  });
+}
+
+function loadOnboardRecords() {
+  if (!_fbDb) return;
+  var tbody = document.getElementById('onboard-employee-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>';
+  _fbDb.collection('masterlist').orderBy('name').get().then(function(snap) {
+    if (snap.empty) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;"><div style="font-size:36px;opacity:.45;">🧑‍💼</div><div style="font-weight:600;margin-top:8px;">No onboarding records</div><div style="font-size:12px;margin-top:4px;">Use the button above to onboard a new employee.</div></td></tr>';
+      return;
+    }
+    var rows = '';
+    snap.forEach(function(d) {
+      var e = d.data();
+      var statusPill = e.status === 'Active'
+        ? '<span class="pill-active">Active</span>'
+        : '<span class="pill-inactive">' + escapeHtml(e.status || 'Inactive') + '</span>';
+      rows += '<tr>' +
+        '<td>' + escapeHtml(e.ibmSerialNo || '') + '</td>' +
+        '<td>' + escapeHtml(e.name || '') + '</td>' +
+        '<td>' + escapeHtml(e.email || '') + '</td>' +
+        '<td><span class="tag tag-blue">' + escapeHtml(e.serviceLine || '') + '</span></td>' +
+        '<td>' + statusPill + '</td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = rows;
+  }).catch(function(err) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--danger);padding:16px;">Error loading records.</td></tr>';
+    console.error(err);
+  });
+}
+
+// ──────────────────────────────────────────────
+// ── ADMIN: WFH SCHEDULE
+// ──────────────────────────────────────────────
+function openAddWfhModal() {
+  document.getElementById('wfh-modal-name').value  = '';
+  document.getElementById('wfh-modal-email').value = '';
+  document.getElementById('wfh-modal-day1').value  = '';
+  document.getElementById('wfh-modal-day2').value  = '';
+  document.getElementById('wfh-error').textContent = '';
+  openModal('modal-add-wfh');
+}
+
+async function saveWfhRecord() {
+  var name  = (document.getElementById('wfh-modal-name').value  || '').trim();
+  var email = (document.getElementById('wfh-modal-email').value || '').trim();
+  var day1  = document.getElementById('wfh-modal-day1').value;
+  var day2  = document.getElementById('wfh-modal-day2').value;
+  var errEl = document.getElementById('wfh-error');
+  errEl.textContent = '';
+  if (!name)  { errEl.textContent = 'Name is required.'; return; }
+  if (!email) { errEl.textContent = 'Email is required.'; return; }
+  var btn = document.getElementById('wfh-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await _fbDb.collection('wfhSchedule').add({
+      name: name, email: email, wfhDay1: day1, wfhDay2: day2,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    closeModal('modal-add-wfh');
+    showToast('WFH record saved.', '✅');
+    loadWfhSchedule();
+  } catch(err) {
+    errEl.textContent = 'Failed to save.';
+    console.error(err);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+}
+
+function loadWfhSchedule() {
+  if (!_fbDb) return;
+  var tbody = document.getElementById('wfh-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>';
+  _fbDb.collection('wfhSchedule').orderBy('name').get().then(function(snap) {
+    if (snap.empty) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">No WFH records found.</td></tr>';
+      return;
+    }
+    var rows = '';
+    snap.forEach(function(d) {
+      var r = d.data();
+      rows += '<tr>' +
+        '<td>' + escapeHtml(r.name || '') + '</td>' +
+        '<td>' + escapeHtml(r.email || '') + '</td>' +
+        '<td>' + escapeHtml(r.wfhDay1 || '') + '</td>' +
+        '<td>' + escapeHtml(r.wfhDay2 || '') + '</td>' +
+        '<td><button class="btn btn-danger btn-sm" onclick="deleteWfhRecord(\'' + d.id + '\')">Delete</button></td>' +
+        '</tr>';
+    });
+    tbody.innerHTML = rows;
+  }).catch(function(err) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--danger);padding:16px;">Error loading WFH schedule.</td></tr>';
+    console.error(err);
+  });
+}
+
+async function deleteWfhRecord(docId) {
+  if (!confirm('Delete this WFH record?')) return;
+  try {
+    await _fbDb.collection('wfhSchedule').doc(docId).delete();
+    showToast('WFH record deleted.', '🗑️');
+    loadWfhSchedule();
+  } catch(err) { showToast('Failed to delete.'); }
+}
+
+function handleWfhUpload(event) {
+  var file = event.target.files && event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+  _parseUploadFile(file, function(rows) {
+    var schema = {
+      title:      'Upload WFH Schedule',
+      sub:        file.name,
+      collection: 'wfhSchedule',
+      idField:    null,
+      requireFinalConfirm: true,
+      finalConfirmMsg:  'Please confirm this is the <strong>final version</strong> of the WFH Schedule. Any future updates will require approval from Managers before being re-uploaded.',
+      // Single comma-separated WFH Days column → split into wfhDay1 / wfhDay2
+      splitWfhDays: true,
+      columns: [
+        { label: 'Name',      key: 'name',    aliases: ['name','full name','fullname','employee name'] },
+        { label: 'Email',     key: 'email',   aliases: ['email','email address','e-mail'] },
+        { label: 'WFH Days',  key: '_wfhDays', aliases: ['wfh days','wfhdays','wfh day','wfhday','days','wfh','work from home days','wfh schedule'] },
+        { label: 'WFH Day 1', key: 'wfhDay1', aliases: ['wfh day 1','wfhday1','day 1','day1','wfh1'] },
+        { label: 'WFH Day 2', key: 'wfhDay2', aliases: ['wfh day 2','wfhday2','day 2','day2','wfh2'] }
+      ],
+      onSuccess: function() { loadWfhSchedule(); }
+    };
+    _openUploadPreview(rows, schema);
+  });
+}
+
+// ──────────────────────────────────────────────
+// ── ATTENDANCE: MONTHLY (ILC)
+// ──────────────────────────────────────────────
+var _monthlyAttRecords = [];
+
+// Extract last name for sort: "LAST, FIRST" → "LAST"; plain string → full string
+function _lastNameKey(name) {
+  var s = (name || '').trim().toUpperCase();
+  var comma = s.indexOf(',');
+  return comma !== -1 ? s.substring(0, comma).trim() : s;
+}
+
+// Activity codes that qualify for variance flagging when hours ≠ 8
+var ILC_VARIANCE_ACTIVITIES = new Set([
+  'XL0A00','XL0B00','XL0C00','XL0D00','XL0G00','XL0I00','XL0J00','XL0K00','XL0Y00'
+]);
+
+// Given a weekending date string (Friday), return an object with each day's Date
+function _ilcWeekDates(weekendingStr) {
+  if (!weekendingStr) return null;
+  var d = new Date(weekendingStr);
+  if (isNaN(d.getTime())) return null;
+  // weekending = Friday; week runs Sat(-6) → Fri(0)
+  var fri = new Date(d); fri.setUTCHours(0,0,0,0);
+  var days = {};
+  var offsets = { saturday:-6, sunday:-5, monday:-4, tuesday:-3, wednesday:-2, thursday:-1, friday:0 };
+  Object.keys(offsets).forEach(function(k) {
+    var dd = new Date(fri);
+    dd.setUTCDate(fri.getUTCDate() + offsets[k]);
+    days[k] = dd;
+  });
+  return days;
+}
+
+function _fmtDayDate(d) {
+  if (!d) return '';
+  return d.toLocaleDateString('en-US', { month:'short', day:'numeric', timeZone:'UTC' });
+}
+
+function loadMonthlyAttendance(forceServer) {
+  if (!_fbDb) return;
+  if (forceServer) { _monthlyAttRecords = []; }
+  _populateYearDropdown('monthly-att-year', _monthlyAttRecords);
+  _renderMonthlyAtt();
+  var opts = forceServer ? { source: 'server' } : {};
+  _fbDb.collection('monthlyAttendance').orderBy('weekending', 'desc').get(opts).then(function(snap) {
+    _monthlyAttRecords = [];
+    snap.forEach(function(d) { _monthlyAttRecords.push(Object.assign({ _id: d.id }, d.data())); });
+    _populateYearDropdown('monthly-att-year', _monthlyAttRecords);
+    _populateFilterDropdown('monthly-att-email',     _monthlyAttRecords, 'email',       'Email (All)');
+    _populateFilterDropdown('monthly-att-weekending', _monthlyAttRecords, 'weekending',  'Weekending (All)');
+    _renderMonthlyAtt();
+  }).catch(function(err) { console.error(err); });
+}
+
+function filterMonthlyAtt() { _renderMonthlyAtt(); }
+
+function _renderMonthlyAtt() {
+  var tbody = document.getElementById('monthly-att-tbody');
+  var thead = document.getElementById('monthly-att-thead');
+  if (!tbody) return;
+
+  var year       = document.getElementById('monthly-att-year').value;
+  var month      = document.getElementById('monthly-att-month').value;
+  var weekending = document.getElementById('monthly-att-weekending').value;
+  var email      = document.getElementById('monthly-att-email').value;
+
+  var filtered = _monthlyAttRecords.filter(function(r) {
+    if (year       && String(r.year || (r.weekending || '').substring(0,4)) !== year) return false;
+    if (month      && r.month !== month)                                               return false;
+    if (weekending && (r.weekending || '') !== weekending)                             return false;
+    if (email      && (r.email      || '') !== email)                                  return false;
+    return true;
+  });
+  // Sort: weekending asc (first week first), then last name A–Z
+  filtered.sort(function(a, b) {
+    var weA = a.weekending || '', weB = b.weekending || '';
+    if (weA < weB) return -1; if (weA > weB) return 1;
+    var nA = _lastNameKey(a.name), nB = _lastNameKey(b.name);
+    return nA < nB ? -1 : nA > nB ? 1 : 0;
+  });
+
+  var EMPTY_HEAD = '<tr>' +
+    '<th class="col-serial">IBM Serial No.</th><th class="col-name">Name</th><th class="col-acct">Email</th>' +
+    '<th class="col-we">Weekending</th><th class="col-act">Activity</th>' +
+    '<th class="col-day ilc-weekend">Sat</th><th class="col-day ilc-weekend">Sun</th>' +
+    '<th class="col-day">Mon</th><th class="col-day">Tue</th><th class="col-day">Wed</th>' +
+    '<th class="col-day">Thu</th><th class="col-day">Fri</th>' +
+    '<th class="col-total">Total Hrs</th><th class="col-ot">OT Hrs</th>' +
+    '<th class="col-vl">VL</th><th class="col-sl">SL</th>' +
+  '</tr>';
+
+  if (!filtered.length) {
+    if (thead) thead.innerHTML = EMPTY_HEAD;
+    tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;color:var(--muted);padding:32px;">No records match the selected filters.</td></tr>';
+    return;
+  }
+
+  // Build dynamic header from first record's weekending date
+  var firstWE   = filtered[0].weekending || '';
+  var weekDates = _ilcWeekDates(firstWE);
+  if (thead) {
+    var dayOrder  = ['saturday','sunday','monday','tuesday','wednesday','thursday','friday'];
+    var dayLabels = { saturday:'Sat', sunday:'Sun', monday:'Mon', tuesday:'Tue', wednesday:'Wed', thursday:'Thu', friday:'Fri' };
+    var dayColCls = { saturday:'col-day ilc-weekend', sunday:'col-day ilc-weekend', monday:'col-day', tuesday:'col-day', wednesday:'col-day', thursday:'col-day', friday:'col-day' };
+    var dayCols = dayOrder.map(function(d) {
+      var dateStr = weekDates ? _fmtDayDate(weekDates[d]) : '';
+      return '<th class="' + dayColCls[d] + '">' +
+        '<span class="ilc-th-day">' + dayLabels[d] + '</span>' +
+        '</th>';
+    }).join('');
+    thead.innerHTML = '<tr>' +
+      '<th class="col-serial">IBM Serial No.</th>' +
+      '<th class="col-name">Name</th>' +
+      '<th class="col-acct">Email</th>' +
+      '<th class="col-we">Weekending</th>' +
+      '<th class="col-act">Activity</th>' +
+      dayCols +
+      '<th class="col-total">Total</th>' +
+      '<th class="col-ot">OT</th>' +
+      '<th class="col-vl" title="Vacation Leave count">VL</th>' +
+      '<th class="col-sl" title="Sick Leave count">SL</th>' +
+    '</tr>';
+  }
+
+  // Map activity code → CSS suffix for .ilc-day-tag-*
+  var ACT_TAG_CLS = {
+    'GB':'gb','VL':'vl','SL':'sl','HOL':'hol','OHOL':'ohol','CDO':'cdo',
+    'PRNT':'prnt','PTNW':'ptnw','UTNW':'utnw','EMPL':'empl'
+  };
+
+  // Helper: format numeric day cell, optional actCode colours the cell
+  function dayCell(val, isWeekend, actCode) {
+    var cls = 'ilc-num col-day' + (isWeekend ? ' ilc-weekend' : '');
+    if (val === 0) return '<td class="' + cls + '">—</td>';
+    var otCls = isWeekend ? ' ilc-ot-we' : (val > 9 ? ' ilc-ot' : '');
+    var tagHtml = '';
+    if (actCode) {
+      var code = actCode.trim().toUpperCase();
+      var tagCls = ACT_TAG_CLS[code] || 'misc';
+      tagHtml = '<span class="ilc-day-tag ilc-day-tag-' + tagCls + '">' + escapeHtml(code) + '</span>';
+    }
+    return '<td class="' + cls + otCls + '" style="vertical-align:middle;text-align:center;">' + val + tagHtml + '</td>';
+  }
+
+  tbody.innerHTML = filtered.map(function(r) {
+    // Activities stored as comma-separated string (after pivot) or single value
+    var actRaw   = r.activity || '';
+    var actList  = actRaw.split(',').map(function(a) { return a.trim().toUpperCase(); });
+    var isVariance = actList.some(function(act) {
+      return ILC_VARIANCE_ACTIVITIES.has(act);
+    }) && [
+      parseFloat(r.saturday||0)||0, parseFloat(r.sunday||0)||0,
+      parseFloat(r.monday||0)||0,   parseFloat(r.tuesday||0)||0,
+      parseFloat(r.wednesday||0)||0,parseFloat(r.thursday||0)||0,
+      parseFloat(r.friday||0)||0
+    ].some(function(h) { return h > 0 && h !== 8; });
+
+    var abd = r.activityByDay || {};
+
+    var sat = parseFloat(r.saturday  || 0) || 0;
+    var sun = parseFloat(r.sunday    || 0) || 0;
+    var mon = parseFloat(r.monday    || 0) || 0;
+    var tue = parseFloat(r.tuesday   || 0) || 0;
+    var wed = parseFloat(r.wednesday || 0) || 0;
+    var thu = parseFloat(r.thursday  || 0) || 0;
+    var fri = parseFloat(r.friday    || 0) || 0;
+
+    var total     = sat + sun + mon + tue + wed + thu + fri;
+    var otWeekday = [mon,tue,wed,thu,fri].reduce(function(a,h){ return a + (h>9?h-9:0); }, 0);
+    var ot        = otWeekday + sat + sun;
+    var vl        = parseInt(r.vlCount || 0) || 0;
+    var sl        = parseInt(r.slCount || 0) || 0;
+
+    var actDisplay = actRaw.split(',').map(function(a) { return escapeHtml(a.trim()); }).join(', ');
+    var actCell = isVariance
+      ? '<td class="col-act"><div class="ilc-activity-cell">' + actDisplay +
+        '<span class="ilc-variance-badge">⚑ Variance</span></div></td>'
+      : '<td class="col-act">' + actDisplay + '</td>';
+
+    return '<tr>' +
+      '<td class="col-serial">' + escapeHtml(r.ibmSerialNo || '') + '</td>' +
+      '<td class="col-name">'   + escapeHtml(r.name        || '') + '</td>' +
+      '<td class="col-acct">'   + escapeHtml(r.email       || '') + '</td>' +
+      '<td class="col-we">'     + escapeHtml(r.weekending  || '') + '</td>' +
+      actCell +
+      dayCell(sat, true,  abd.saturday)  + dayCell(sun, true,  abd.sunday)  +
+      dayCell(mon, false, abd.monday)    + dayCell(tue, false, abd.tuesday) +
+      dayCell(wed, false, abd.wednesday) + dayCell(thu, false, abd.thursday) + dayCell(fri, false, abd.friday) +
+      '<td class="ilc-num col-total ilc-total">'        + (total > 0 ? total : '—') + '</td>' +
+      '<td class="ilc-num col-ot ilc-computed-ot">'     + (ot    > 0 ? ot    : '—') + '</td>' +
+      '<td class="ilc-vl col-vl">' + (vl > 0 ? vl : '—') + '</td>' +
+      '<td class="ilc-sl col-sl">' + (sl > 0 ? sl : '—') + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function handleMonthlyAttUpload(event) {
+  var file = event.target.files && event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+  _parseUploadFile(file, function(rows) {
+    var schema = {
+      title:      'Upload Monthly Attendance (ILC)',
+      sub:        file.name,
+      collection: 'monthlyAttendance',
+      idField:    null,
+      addMonthYear:     true,
+      checkFullMonth:   true,
+      requireFinalConfirm: true,
+      finalConfirmMsg:  'This upload is <strong>final and non-editable</strong>. Once uploaded, records for this Report Month & Year cannot be changed unless you delete the entire report period. Confirm the file is correct before proceeding.',
+      pivotIlc: true,   // pivot multi-row per employee+weekending into one aggregated row
+      columns: [
+        { label: 'Account ID',    key: 'accountId',     aliases: ['account id','accountid','account','acct id','acct','account number','acct grp id','acctgrpid'] },
+        { label: 'IBM Serial No.', key: 'ibmSerialNo',  aliases: ['ibm serial no','ibm serial no.','ibm serial','serialno','serial no','serial number','employee serial','emp serial','employee ser'] },
+        { label: 'Name',          key: 'name',          aliases: ['name','full name','fullname','employee name','employee'] },
+        { label: 'Last Name',     key: '_lastName',      aliases: ['last name','lastname','emp last name','employee last name','surname'] },
+        { label: 'First Name',    key: '_firstName',     aliases: ['first name','firstname','emp first name','employee first name','given name'] },
+        { label: 'Weekending',    key: 'weekending',    aliases: ['weekending','week ending','week-ending','weekenddate','week end','we date','we','wk ending dt','wk ending','wkendingdt'] },
+        { label: 'Activity',      key: 'activity',      aliases: ['activity','activity type','task','work type','actvty lbr desc','actvty lbr','activity lbr desc','labor description'] },
+        { label: 'Mon',           key: 'monday',        aliases: ['mon','monday','mon hrs','monday hrs','mon hrs expndd qty','mon expndd','monday expanded'] },
+        { label: 'Tue',           key: 'tuesday',       aliases: ['tue','tuesday','tue hrs','tuesday hrs','tue hrs expndd qty','tue expndd','tuesday expanded'] },
+        { label: 'Wed',           key: 'wednesday',     aliases: ['wed','wednesday','wed hrs','wednesday hrs','wed hrs expndd qty','wed expndd','wednesday expanded'] },
+        { label: 'Thu',           key: 'thursday',      aliases: ['thu','thursday','thu hrs','thursday hrs','thu hrs expndd qty','thu expndd','thursday expanded'] },
+        { label: 'Fri',           key: 'friday',        aliases: ['fri','friday','fri hrs','friday hrs','fri hrs expndd qty','fri expndd','friday expanded'] },
+        { label: 'Sat',           key: 'saturday',      aliases: ['sat','saturday','sat hrs','saturday hrs','sat hrs expndd qty','sat expndd','saturday expanded'] },
+        { label: 'Sun',           key: 'sunday',        aliases: ['sun','sunday','sun hrs','sunday hrs','sun hrs expndd qty','sun expndd','sunday expanded'] }
+      ],
+      onSuccess: function(uploadedRows) {
+        loadMonthlyAttendance();
+        _upsertMasterlistFromIlc(uploadedRows);
+      }
+    };
+    _openUploadPreview(rows, schema);
+  });
+}
+
+// ──────────────────────────────────────────────
+// ── ATTENDANCE: MONDAY
+// ──────────────────────────────────────────────
+var _mondayAttRecords = [];
+
+function loadMondayAttendance(forceServer) {
+  if (!_fbDb) return;
+  if (forceServer) { _mondayAttRecords = []; }
+  _populateYearDropdown('monday-att-year', _mondayAttRecords);
+  _renderMondayAtt();
+  var opts = forceServer ? { source: 'server' } : {};
+  // Load records and service-line codes in parallel
+  Promise.all([
+    _fbDb.collection('mondayAttendance').orderBy('date', 'desc').get(opts),
+    _fbDb.collection('serviceLines').orderBy('code').get()
+  ]).then(function(results) {
+    var attSnap = results[0], slSnap = results[1];
+    _mondayAttRecords = [];
+    attSnap.forEach(function(d) { _mondayAttRecords.push(Object.assign({ _id: d.id }, d.data())); });
+    _populateYearDropdown('monday-att-year', _mondayAttRecords);
+    _populateFilterDropdown('monday-att-email', _mondayAttRecords, 'email', 'Email (All)');
+    // Populate group dropdown from service line codes
+    var sel = document.getElementById('monday-att-group');
+    if (sel) {
+      var opts = '<option value="">Group (All)</option>';
+      slSnap.forEach(function(d) {
+        var sl = d.data();
+        if (sl.code) opts += '<option value="' + escapeHtml(sl.code) + '">' + escapeHtml(sl.code) + (sl.name ? ' – ' + escapeHtml(sl.name) : '') + '</option>';
+      });
+      sel.innerHTML = opts;
+    }
+    _renderMondayAtt();
+  }).catch(function(err) { console.error(err); });
+}
+
+function filterMondayAtt() { _renderMondayAtt(); }
+
+function _renderMondayAtt() {
+  var tbody = document.getElementById('monday-att-tbody');
+  if (!tbody) return;
+  var year    = document.getElementById('monday-att-year').value;
+  var month   = document.getElementById('monday-att-month').value;
+  var email   = document.getElementById('monday-att-email').value;
+  var group   = document.getElementById('monday-att-group').value;
+  var filtered = _mondayAttRecords.filter(function(r) {
+    if (year  && String(r.year || (r.date || '').substring(0,4)) !== year) return false;
+    if (month && r.month !== month)                                         return false;
+    if (email && (r.email || '') !== email)                                 return false;
+    if (group && (r.group || '') !== group)                                 return false;
+    return true;
+  });
+  // Sort: date asc (first day of month first), then last name A–Z
+  filtered.sort(function(a, b) {
+    var dA = a.date || '', dB = b.date || '';
+    if (dA < dB) return -1; if (dA > dB) return 1;
+    var nA = _lastNameKey(a.name), nB = _lastNameKey(b.name);
+    return nA < nB ? -1 : nA > nB ? 1 : 0;
+  });
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">No records match the selected filters.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(function(r) {
+    return '<tr>' +
+      '<td>' + escapeHtml(r.ibmSerialNo || '') + '</td>' +
+      '<td>' + escapeHtml(r.name        || '') + '</td>' +
+      '<td>' + escapeHtml(r.email       || '') + '</td>' +
+      '<td>' + escapeHtml(r.date        || '') + '</td>' +
+      '<td>' + escapeHtml(r.group       || '') + '</td>' +
+      '<td>' + escapeHtml(r.status      || '') + '</td>' +
+      '<td>' + escapeHtml(r.duration    || '') + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// ── Normalise a name to "LASTNAME, FIRSTNAME" canonical form.
+// Handles both "LAST, FIRST" (already correct) and "FIRST LAST" (Monday format).
+function _normaliseName(raw) {
+  if (!raw) return '';
+  var s = raw.trim();
+  // Already in "LAST, FIRST" form
+  if (s.indexOf(',') !== -1) return s.toUpperCase();
+  // "FIRST LAST" → "LAST, FIRST"
+  var parts = s.split(/\s+/);
+  if (parts.length < 2) return s.toUpperCase();
+  var last  = parts[parts.length - 1];
+  var first = parts.slice(0, parts.length - 1).join(' ');
+  return (last + ', ' + first).toUpperCase();
+}
+
+// ── After ILC upload, upsert masterlist with ibmSerialNo, name, accountId
+async function _upsertMasterlistFromIlc(rows) {
+  if (!_fbDb || !rows || !rows.length) return;
+  // Fetch existing masterlist entries keyed by ibmSerialNo
+  var snap = await _fbDb.collection('masterlist').get();
+  var existing = {};   // ibmSerialNo → docId
+  snap.forEach(function(d) {
+    var v = (d.data().ibmSerialNo || '').trim();
+    if (v) existing[v] = d.id;
+  });
+  var ts = firebase.firestore.FieldValue.serverTimestamp();
+  var BATCH = 490;
+  // Collect distinct employees from the ILC rows
+  var empMap = {};
+  rows.forEach(function(r) {
+    var serial = (r.ibmSerialNo || '').trim();
+    if (!serial) return;
+    if (!empMap[serial]) {
+      empMap[serial] = {
+        ibmSerialNo: serial,
+        name:        _normaliseName(r.name || ''),
+        accountId:   (r.accountId || '').trim(),
+        status:      'Active'
+      };
+    }
+  });
+  var emps = Object.values(empMap);
+  if (!emps.length) return;
+  var batches = [], cur = _fbDb.batch(), count = 0;
+  emps.forEach(function(emp) {
+    var ref = existing[emp.ibmSerialNo]
+      ? _fbDb.collection('masterlist').doc(existing[emp.ibmSerialNo])
+      : _fbDb.collection('masterlist').doc();
+    cur.set(ref, Object.assign(emp, { updatedAt: ts }), { merge: true });
+    if (++count >= BATCH) { batches.push(cur); cur = _fbDb.batch(); count = 0; }
+  });
+  if (count > 0) batches.push(cur);
+  await Promise.all(batches.map(function(b) { return b.commit(); }));
+  showToast(emps.length + ' masterlist record' + (emps.length === 1 ? '' : 's') + ' updated from ILC.', '✅');
+  loadMasterlist();
+  loadOnboardRecords();
+}
+
+// ── After Monday upload, enrich rows with ibmSerialNo + accountId from masterlist
+// and normalise name to match ILC "LASTNAME, FIRSTNAME" format.
+async function _enrichMondayFromMasterlist(rows) {
+  if (!_fbDb || !rows || !rows.length) return;
+  // Build masterlist lookup: normalised name → { ibmSerialNo, accountId }
+  var snap = await _fbDb.collection('masterlist').get();
+  var byName = {};
+  snap.forEach(function(d) {
+    var data = d.data();
+    var key  = _normaliseName(data.name || '');
+    if (key) byName[key] = { ibmSerialNo: data.ibmSerialNo || '', accountId: data.accountId || '', email: data.email || '' };
+  });
+  // Enrich each row in-place
+  rows.forEach(function(r) {
+    var normName = _normaliseName(r.name || '');
+    r.name = normName;   // standardise to LASTNAME, FIRSTNAME
+    var match = byName[normName];
+    if (match) {
+      if (!r.ibmSerialNo) r.ibmSerialNo = match.ibmSerialNo;
+      if (!r.accountId)   r.accountId   = match.accountId;
+      if (!r.email)       r.email       = match.email;
+    }
+  });
+}
+
+// ──────────────────────────────────────────────
+// ── MASTER SYNC
+// Fast path:
+//   1. Read masterlist from cache (IndexedDB — no network round-trip).
+//   2. Patch in-memory attendance arrays instantly + re-render the open page.
+//   3. Fire-and-forget Firestore writes in the background (do NOT await them).
+//      The UI is unblocked immediately; Firestore catches up on its own.
+// ──────────────────────────────────────────────
+async function runMasterSync() {
+  if (!_fbDb) return;
+  var btn = document.getElementById('master-sync-btn');
+  btn.disabled = true;
+  btn.querySelector('span').textContent = '⏳ Syncing…';
+
+  try {
+    // ── 1. Read masterlist — served from IndexedDB cache, no network wait ─────
+    var mlSnap = await _fbDb.collection('masterlist').get({ source: 'cache' }).catch(function() {
+      // Cache miss (first run or cache cleared) — fall back to server
+      return _fbDb.collection('masterlist').get();
+    });
+
+    // ── 2. Build lookup maps ──────────────────────────────────────────────────
+    var bySerial   = {};
+    var byNormName = {};
+    var mlDocs     = [];
+
+    mlSnap.forEach(function(d) {
+      var e  = d.data();
+      var sn = (e.ibmSerialNo || '').trim();
+      var nn = _normaliseName(e.name || '');
+      var rec = { serial: sn, name: nn, accountId: (e.accountId || '').trim(), email: (e.email || '').trim().toLowerCase() };
+      if (sn) bySerial[sn]   = rec;
+      if (nn) byNormName[nn] = rec;
+      mlDocs.push({ id: d.id, data: e });
+    });
+
+    // ── 3. Diff helper ────────────────────────────────────────────────────────
+    function _diffRow(r) {
+      var sn    = (r.ibmSerialNo || '').trim();
+      var nn    = _normaliseName(r.name || '');
+      var acct  = (r.accountId  || '').trim();
+      var email = (r.email      || '').trim().toLowerCase();
+      var truth = (sn && bySerial[sn]) || (nn && byNormName[nn]) || null;
+      if (!truth) return null;
+      var patch = {};
+      if (!sn    && truth.serial)    patch.ibmSerialNo = truth.serial;
+      if (!acct  && truth.accountId) patch.accountId   = truth.accountId;
+      if (!email && truth.email)     patch.email        = truth.email;
+      if (truth.name && truth.name !== nn) {
+        var sc = nn.indexOf(',') !== -1, tc = truth.name.indexOf(',') !== -1;
+        if (!nn || (tc && !sc) || truth.name.length > nn.length) patch.name = truth.name;
+      }
+      return Object.keys(patch).length ? patch : null;
+    }
+
+    var ilcPatched = 0, monPatched = 0, mlPatched = 0, newMlCount = 0;
+    var attWrites = [];   // attendance writes — fire-and-forget
+    var mlWrites  = [];   // masterlist writes — awaited (small)
+
+    // ── 4a. Patch in-memory ILC records instantly ─────────────────────────────
+    _monthlyAttRecords.forEach(function(r) {
+      var patch = _diffRow(r);
+      if (!patch) return;
+      Object.assign(r, patch);   // update in-memory immediately
+      if (r._id) attWrites.push({ col: 'monthlyAttendance', id: r._id, patch: patch });
+      ilcPatched++;
+    });
+
+    // ── 4b. Patch in-memory Monday records instantly ──────────────────────────
+    _mondayAttRecords.forEach(function(r) {
+      var patch = _diffRow(r);
+      if (!patch) return;
+      Object.assign(r, patch);
+      if (r._id) attWrites.push({ col: 'mondayAttendance', id: r._id, patch: patch });
+      monPatched++;
+    });
+
+    // ── 4c. Patch masterlist docs ─────────────────────────────────────────────
+    var ts = firebase.firestore.FieldValue.serverTimestamp();
+    mlDocs.forEach(function(m) {
+      var patch = _diffRow(m.data);
+      if (patch) { mlWrites.push({ id: m.id, patch: patch }); mlPatched++; }
+    });
+
+    // ── 4d. New masterlist entries for employees missing from it ──────────────
+    var seen = {};
+    function _maybeAddToMl(r) {
+      var sn = (r.ibmSerialNo || '').trim();
+      if (!sn || bySerial[sn] || seen[sn]) return;
+      seen[sn] = true;
+      mlWrites.push({
+        id: null, isSet: true,
+        patch: { ibmSerialNo: sn, name: _normaliseName(r.name || ''), accountId: (r.accountId || '').trim(), email: (r.email || '').trim().toLowerCase(), status: 'Active', updatedAt: ts }
+      });
+      newMlCount++;
+    }
+    _monthlyAttRecords.forEach(_maybeAddToMl);
+    _mondayAttRecords.forEach(_maybeAddToMl);
+
+    var totalChanges = ilcPatched + monPatched + mlPatched + newMlCount;
+    if (!totalChanges) {
+      showToast('Everything is already in sync — no changes needed.', '✅');
+      btn.disabled = false;
+      btn.querySelector('span').textContent = '⚡ Master Sync';
+      return;
+    }
+
+    // ── 5. Re-render open attendance pages immediately (in-memory already patched)
+    if (document.getElementById('page-monthly-attendance').classList.contains('active')) _renderMonthlyAtt();
+    if (document.getElementById('page-monday-attendance').classList.contains('active'))  _renderMondayAtt();
+
+    // ── 6. Await only masterlist writes (small — just employee count) ─────────
+    if (mlWrites.length) {
+      var BATCH = 490, cur = _fbDb.batch(), count = 0, batches = [];
+      mlWrites.forEach(function(w) {
+        var ref = w.id ? _fbDb.collection('masterlist').doc(w.id) : _fbDb.collection('masterlist').doc();
+        w.isSet ? cur.set(ref, w.patch) : cur.update(ref, Object.assign({}, w.patch, { syncedAt: ts }));
+        if (++count >= BATCH) { batches.push(cur); cur = _fbDb.batch(); count = 0; }
+      });
+      if (count > 0) batches.push(cur);
+      await Promise.all(batches.map(function(b) { return b.commit(); }));
+    }
+
+    // ── 7. Fire-and-forget attendance writes in background ────────────────────
+    // These go to Firestore without blocking the UI.
+    if (attWrites.length) {
+      var BATCH2 = 490, cur2 = _fbDb.batch(), cnt2 = 0, batches2 = [];
+      attWrites.forEach(function(w) {
+        var ref = _fbDb.collection(w.col).doc(w.id);
+        cur2.update(ref, Object.assign({}, w.patch, { syncedAt: ts }));
+        if (++cnt2 >= BATCH2) { batches2.push(cur2); cur2 = _fbDb.batch(); cnt2 = 0; }
+      });
+      if (cnt2 > 0) batches2.push(cur2);
+      // Not awaited — runs in background, UI already updated
+      Promise.all(batches2.map(function(b) { return b.commit(); })).catch(function(err) {
+        console.warn('Master Sync background write error:', err);
+      });
+    }
+
+    // ── 8. Summary toast + refresh masterlist ────────────────────────────────
+    var parts = [];
+    if (ilcPatched > 0) parts.push(ilcPatched + ' ILC record'        + (ilcPatched  !== 1 ? 's' : '') + ' patched');
+    if (monPatched > 0) parts.push(monPatched + ' Monday record'     + (monPatched  !== 1 ? 's' : '') + ' patched');
+    if (mlPatched  > 0) parts.push(mlPatched  + ' masterlist record' + (mlPatched   !== 1 ? 's' : '') + ' patched');
+    if (newMlCount > 0) parts.push(newMlCount + ' new masterlist entr' + (newMlCount !== 1 ? 'ies' : 'y') + ' added');
+    showToast('Master Sync complete — ' + parts.join(', ') + '.', '✅');
+    loadMasterlist();
+
+  } catch (err) {
+    console.error('Master Sync error:', err);
+    showToast('Master Sync failed: ' + (err.message || err), '❌');
+  }
+
+  btn.disabled = false;
+  btn.querySelector('span').textContent = '⚡ Master Sync';
+}
+
+// Generate a service line code from a name: first letter of each word, uppercased
+// e.g. "Software Engineering" → "SE", "Global Business Services" → "GBS"
+function _groupToCode(name) {
+  return (name || '').trim().split(/\s+/)
+    .map(function(w) { return w.charAt(0).toUpperCase(); })
+    .join('');
+}
+
+// After a Monday upload, auto-upsert any new unique Group values into serviceLines
+async function _syncServiceLinesFromUpload(rows) {
+  if (!_fbDb || !rows || !rows.length) return;
+  // Collect unique non-empty group names from the uploaded rows
+  var seen = {};
+  rows.forEach(function(r) {
+    var g = (r.group || '').trim();
+    if (g) seen[g] = true;
+  });
+  var groups = Object.keys(seen);
+  if (!groups.length) return;
+
+  // Fetch existing service lines to avoid duplicates (match by name, case-insensitive)
+  var snap = await _fbDb.collection('serviceLines').get();
+  var existingNames = {};
+  snap.forEach(function(d) {
+    existingNames[(d.data().name || '').trim().toLowerCase()] = true;
+  });
+
+  // Upsert only genuinely new groups
+  var toAdd = groups.filter(function(g) { return !existingNames[g.toLowerCase()]; });
+  if (!toAdd.length) return;
+
+  var ts = firebase.firestore.FieldValue.serverTimestamp();
+  var batch = _fbDb.batch();
+  toAdd.forEach(function(g) {
+    var code = _groupToCode(g);
+    batch.set(_fbDb.collection('serviceLines').doc(), {
+      code: code, name: g, description: g, updatedAt: ts
+    });
+  });
+  await batch.commit();
+  showToast(toAdd.length + ' new service line' + (toAdd.length === 1 ? '' : 's') + ' added from upload.', '✅');
+  // Refresh service lines list if the page is open
+  loadServiceLines();
+}
+
+function handleMondayAttUpload(event) {
+  var file = event.target.files && event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+  _parseUploadFile(file, function(rows) {
+    var schema = {
+      title:      'Upload Monthly Attendance (Monday.com)',
+      sub:        file.name,
+      collection: 'mondayAttendance',
+      idField:    null,
+      addMonthYear:     true,
+      checkFullMonth:   true,
+      requireFinalConfirm: true,
+      finalConfirmMsg:  'This upload is <strong>final and non-editable</strong>. Once uploaded, records for this Report Month & Year cannot be changed unless you delete the entire report period. Confirm the file is correct before proceeding.',
+      columns: [
+        { label: 'Name',           key: 'name',        aliases: ['name','full name','fullname','employee name','employee'] },
+        { label: 'IBM Serial No.', key: 'ibmSerialNo', aliases: ['ibm serial no','ibm serial no.','ibm serial','serialno','serial no','serial number','employee serial','emp serial'] },
+        { label: 'Email',          key: 'email',       aliases: ['email','email address','e-mail','mail','email id','emailid','user email'] },
+        { label: 'Date',           key: 'date',        aliases: ['date','attendance date','log date','work date','day','entry date'] },
+        { label: 'Group',          key: 'group',       aliases: ['group','service line','sl','team','service line code'] },
+        { label: 'Status',         key: 'status',      aliases: ['status','attendance status','monday status','check-in','present'] },
+        { label: 'Duration',       key: 'duration',    aliases: ['duration','hours','hrs','time','time worked','work hours','duration (h)','duration(h)'] }
+      ],
+      preProcess: function(uploadedRows) { return _enrichMondayFromMasterlist(uploadedRows); },
+      onSuccess: function(uploadedRows) {
+        loadMondayAttendance(true);
+        _syncServiceLinesFromUpload(uploadedRows);
+      }
+    };
+    _openUploadPreview(rows, schema);
+  });
+}
+
+// ── Helper: populate year dropdowns
+function _populateYearDropdown(selectId, records) {
+  var sel = document.getElementById(selectId);
+  if (!sel) return;
+  var years = new Set();
+  records.forEach(function(r) {
+    var y = r.year || (r.weekending || r.date || '').substring(0,4);
+    if (y && /^\d{4}$/.test(y)) years.add(y);
+  });
+  var current = sel.value;
+  var opts = '<option value="">Year</option>';
+  Array.from(years).sort().reverse().forEach(function(y) { opts += '<option>' + y + '</option>'; });
+  sel.innerHTML = opts;
+  if (current) sel.value = current;
+}
+
+// ── Helper: populate generic filter dropdowns from distinct record field values
+function _populateFilterDropdown(selectId, records, field, label) {
+  var sel = document.getElementById(selectId);
+  if (!sel) return;
+  var values = new Set();
+  records.forEach(function(r) { if (r[field]) values.add(r[field]); });
+  var current = sel.value;
+  var opts = '<option value="">' + label + '</option>';
+  Array.from(values).sort().forEach(function(v) { opts += '<option>' + escapeHtml(v) + '</option>'; });
+  sel.innerHTML = opts;
+  if (current) sel.value = current;
+}
+
+// ──────────────────────────────────────────────
+// ── UPLOAD ENGINE
+// ──────────────────────────────────────────────
+
+var _uploadSchema  = null;   // active schema for the pending upload
+var _uploadRows    = null;   // mapped row objects ready to write
+
+// ── Parse CSV or XLSX file → array of raw row objects (keys = raw header strings)
+function _parseUploadFile(file, callback) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var data     = new Uint8Array(e.target.result);
+      var workbook = XLSX.read(data, { type: 'array', cellDates: true });
+      var sheet    = workbook.Sheets[workbook.SheetNames[0]];
+
+      // Auto-detect the real header row: scan the first 10 rows (as raw arrays)
+      // and pick the first row that has at least 3 non-empty, non-numeric string cells.
+      // This handles sheets where rows 1-2 are a title/subtitle before real headers.
+      var raw2d = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+      var headerRowIdx = 0;
+      for (var i = 0; i < Math.min(raw2d.length, 10); i++) {
+        var textCells = raw2d[i].filter(function(c) {
+          var s = String(c).trim();
+          return s.length > 0 && isNaN(Number(s));
+        });
+        if (textCells.length >= 3) { headerRowIdx = i; break; }
+      }
+
+      var rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false, range: headerRowIdx });
+      if (!rows.length) { showToast('The file is empty or has no data rows.', '⚠️'); return; }
+      callback(rows);
+    } catch(err) {
+      console.error('Upload parse error:', err);
+      showToast('Could not read the file. Make sure it is a valid CSV or XLSX.', '❌');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ── Match raw header keys to schema columns (case-insensitive, alias-aware)
+function _mapColumns(rawKeys, schemaCols) {
+  var mapping = {};   // schemaKey → rawKey (or null)
+  schemaCols.forEach(function(col) {
+    var found = null;
+    rawKeys.forEach(function(rk) {
+      if (found) return;
+      var norm = rk.trim().toLowerCase();
+      if (norm === col.key.toLowerCase()) { found = rk; return; }
+      if (col.aliases && col.aliases.indexOf(norm) !== -1) { found = rk; return; }
+    });
+    mapping[col.key] = found;
+  });
+  return mapping;
+}
+
+// ── Apply column mapping to raw rows → mapped row objects
+function _applyMapping(rawRows, schemaCols, colMap) {
+  return rawRows.map(function(raw) {
+    var out = {};
+    schemaCols.forEach(function(col) {
+      var rawKey = colMap[col.key];
+      var val    = rawKey !== null ? (raw[rawKey] !== undefined ? String(raw[rawKey]).trim() : '') : '';
+      if (!val && col.default !== undefined) val = col.default;
+      out[col.key] = val;
+    });
+    return out;
+  });
+}
+
+// ── Derive month/year strings from a date string (for attendance collections)
+function _deriveMonthYear(dateStr) {
+  if (!dateStr) return { month: '', year: '' };
+  var d = new Date(dateStr);
+  if (isNaN(d.getTime())) {
+    // try MM/DD/YYYY or DD/MM/YYYY
+    var parts = dateStr.split(/[\/\-\.]/);
+    if (parts.length === 3) {
+      d = new Date(parts[2] + '-' + parts[0].padStart(2,'0') + '-' + parts[1].padStart(2,'0'));
+    }
+  }
+  if (isNaN(d.getTime())) return { month: '', year: '' };
+  var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return { month: months[d.getMonth()], year: String(d.getFullYear()) };
+}
+
+// ── Open the preview modal
+function _openUploadPreview(rawRows, schema) {
+  var schemaCols = schema.columns;
+  var rawKeys    = rawRows.length ? Object.keys(rawRows[0]) : [];
+  var colMap     = _mapColumns(rawKeys, schemaCols);
+  var mapped     = _applyMapping(rawRows, schemaCols, colMap);
+
+  // If addMonthYear, derive from date/weekending field
+  if (schema.addMonthYear) {
+    var dateKey = schema.collection === 'monthlyAttendance' ? 'weekending' : 'date';
+    mapped.forEach(function(row) {
+      if (!row.month || !row.year) {
+        var derived = _deriveMonthYear(row[dateKey] || '');
+        if (!row.month) row.month = derived.month;
+        if (!row.year)  row.year  = derived.year;
+      }
+    });
+  }
+
+  // Combine _lastName + _firstName → name (if file had separate last/first name columns)
+  mapped.forEach(function(row) {
+    var last  = (row._lastName  || '').trim();
+    var first = (row._firstName || '').trim();
+    if (last) {
+      // Always build "LASTNAME, FIRSTNAME" from split columns when available —
+      // this overrides a bare last-name-only value that may have come from a 'name' column.
+      row.name = first ? (last + ', ' + first).toUpperCase() : last.toUpperCase();
+    } else if (first && row.name) {
+      // Only _firstName was found (no _lastName): append first name to whatever
+      // the name column already contains if it doesn't already include a comma.
+      var existing = row.name.trim();
+      if (existing.indexOf(',') === -1) {
+        row.name = (existing + ', ' + first).toUpperCase();
+      }
+    }
+    delete row._lastName;
+    delete row._firstName;
+  });
+  // Strip helper columns from preview
+  schemaCols = schemaCols.filter(function(c) { return c.key !== '_lastName' && c.key !== '_firstName'; });
+
+  // Track which keys were satisfied via derived/combined columns so warnings are suppressed.
+  // 'name' is satisfied if _lastName or _firstName was mapped (combination already ran above).
+  var derivedSatisfied = {};
+  if (colMap['_lastName'] || colMap['_firstName']) {
+    // Check that at least one row actually got a name from the combination
+    var anyName = mapped.some(function(row) { return !!(row.name || '').trim(); });
+    if (anyName) derivedSatisfied['name'] = true;
+  }
+
+  // Split comma-separated WFH Days column → wfhDay1 / wfhDay2
+  if (schema.splitWfhDays) {
+    mapped.forEach(function(row) {
+      // Only run if _wfhDays was populated and individual day columns are empty
+      var combined = (row._wfhDays || '').trim();
+      if (combined) {
+        var parts = combined.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+        if (!row.wfhDay1) row.wfhDay1 = parts[0] || '';
+        if (!row.wfhDay2) row.wfhDay2 = parts[1] || '';
+      }
+      delete row._wfhDays;   // strip the staging key before writing to Firestore
+    });
+    // Also strip _wfhDays from the preview columns
+    schemaCols = schemaCols.filter(function(c) { return c.key !== '_wfhDays'; });
+  }
+
+  _uploadSchema = schema;
+  _uploadRows   = mapped;
+
+  // Column mapping legend
+  var mapEl = document.getElementById('upload-col-map');
+  mapEl.innerHTML = schemaCols.map(function(col) {
+    var found    = colMap[col.key];
+    var derived  = !found && derivedSatisfied[col.key];
+    var cls = found ? 'mapped' : derived ? 'mapped' : 'unmapped';
+    var lbl = found   ? col.label + ' ✓'
+            : derived ? col.label + ' ✓ (via split columns)'
+            :           col.label + ' (not found)';
+    return '<span class="' + cls + '">' + escapeHtml(lbl) + '</span>';
+  }).join('');
+
+  // Preview table — show first 50 rows
+  var previewRows = mapped.slice(0, 50);
+  var thead = '<tr>' + schemaCols.map(function(c) { return '<th>' + escapeHtml(c.label) + '</th>'; }).join('') + '</tr>';
+  var tbody = previewRows.map(function(row) {
+    return '<tr>' + schemaCols.map(function(c) { return '<td>' + escapeHtml(row[c.key] || '') + '</td>'; }).join('') + '</tr>';
+  }).join('');
+  document.getElementById('upload-preview-thead').innerHTML = thead;
+  document.getElementById('upload-preview-tbody').innerHTML = tbody;
+
+  // Warnings — suppress columns that were satisfied via derived/combined sources
+  var wfhDaysSatisfied = schema.splitWfhDays && !!colMap['_wfhDays'];
+  var unmapped = schemaCols.filter(function(c) {
+    if (!colMap[c.key]) {
+      if (wfhDaysSatisfied && (c.key === 'wfhDay1' || c.key === 'wfhDay2')) return false;
+      if (derivedSatisfied[c.key]) return false;
+      return true;
+    }
+    return false;
+  });
+  var warnEl   = document.getElementById('upload-preview-warn');
+  if (unmapped.length) {
+    warnEl.innerHTML = '<div class="upload-warn">⚠️ Columns not found in file: <strong>' +
+      unmapped.map(function(c){ return c.label; }).join(', ') +
+      '</strong>. These will be saved as empty.</div>';
+  } else {
+    warnEl.innerHTML = '';
+  }
+
+  document.getElementById('upload-preview-title').textContent = schema.title;
+  document.getElementById('upload-preview-sub').textContent   = schema.sub;
+  document.getElementById('upload-preview-count').textContent =
+    mapped.length + ' row' + (mapped.length !== 1 ? 's' : '') + ' ready to upload' +
+    (mapped.length > 50 ? ' (showing first 50)' : '');
+  document.getElementById('upload-confirm-btn').disabled   = false;
+  document.getElementById('upload-confirm-btn').textContent = 'Upload';
+
+  // ── Full-month validation (attendance uploads only)
+  if (schema.checkFullMonth) {
+    var dateKey      = schema.collection === 'monthlyAttendance' ? 'weekending' : 'date';
+    var incomplete   = _checkIncompleteMonth(mapped, dateKey);
+    if (incomplete) {
+      document.getElementById('upload-incomplete-month-msg').innerHTML =
+        'The file appears to contain <strong>incomplete month data</strong>.<br><br>' +
+        'Last date found: <strong>' + escapeHtml(incomplete.lastDate) + '</strong> ' +
+        '(' + escapeHtml(incomplete.month) + ' ' + escapeHtml(incomplete.year) + '). ' +
+        'The month ends on <strong>' + escapeHtml(String(incomplete.expectedLastDay)) + ' ' +
+        escapeHtml(incomplete.month) + ' ' + escapeHtml(incomplete.year) + '</strong>.<br><br>' +
+        'Upload is blocked until the file contains the full month. Please update the file and try again.';
+      document.getElementById('upload-incomplete-month-overlay').classList.add('open');
+      return;   // block — do not open preview
+    }
+  }
+
+  document.getElementById('upload-preview-overlay').classList.add('open');
+}
+
+function closeUploadPreview() {
+  document.getElementById('upload-preview-overlay').classList.remove('open');
+  _uploadSchema = null;
+  _uploadRows   = null;
+}
+
+// ── Confirm & batch-write to Firestore
+// ── ILC pivot: collapse multi-row (per activity) → one row per employee+weekending
+// Sums all day-hour columns; collects distinct activity names; counts VL and SL rows
+// Reword raw activity descriptions to short labels used on the dashboard
+function _normaliseActivity(raw) {
+  var u = (raw || '').trim().toUpperCase();
+  if (u.indexOf('VACATION')    !== -1) return 'VL';
+  if (u.indexOf('ILLNESS')     !== -1) return 'SL';
+  if (u.indexOf('CDO')         !== -1) return 'CDO';
+  if (u.indexOf('DESIGNATED HOLIDAY') !== -1) return 'HOL';
+  if (u.indexOf('OPTIONAL HOLIDAY')   !== -1) return 'OHOL';
+  if (u.indexOf('PAID TIME NOT WORKED')  !== -1) return 'PTNW';
+  if (u.indexOf('UNPAID TIME NOT WKD')   !== -1) return 'UTNW';
+  if (u.indexOf('PRE/POST IBM')          !== -1) return 'EMPL';
+  if (u.indexOf('PARENTING')             !== -1) return 'PRNT';
+  if (u.indexOf('GENERAL BILLABLE')      !== -1) return 'GB';
+  return raw.trim();   // keep original if no match
+}
+
+function _pivotIlcRows(rows) {
+  var map      = {};
+  var order    = [];
+  var DAY_KEYS = ['saturday','sunday','monday','tuesday','wednesday','thursday','friday'];
+
+  rows.forEach(function(row) {
+    var serial = (row.ibmSerialNo || '').trim();
+    var we     = (row.weekending  || '').trim();
+    var key    = serial + '||' + we;
+    if (!map[key]) {
+      map[key] = {
+        accountId:   row.accountId || '',
+        ibmSerialNo: serial,
+        name:        row.name      || '',
+        weekending:  we,
+        month:       row.month     || '',
+        year:        row.year      || '',
+        saturday: 0, sunday: 0,
+        monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0,
+        activityByDay: {},   // dayKey → label for days that have a special activity
+        activities:   [],
+        vlCount: 0,
+        slCount: 0,
+        cdoCount: 0
+      };
+      order.push(key);
+    }
+    var agg    = map[key];
+    var actRaw = (row.activity || '').trim();
+    var actLbl = _normaliseActivity(actRaw);
+
+    // Sum hours per day — and tag the day with the activity label if non-zero
+    DAY_KEYS.forEach(function(dk) {
+      var hrs = parseFloat(row[dk] || 0) || 0;
+      agg[dk] += hrs;
+      // Tag this day with the activity label when hours are logged under it
+      if (hrs > 0 && actLbl) {
+        // Keep first non-Regular label; or overwrite if current is a special code
+        var existing = agg.activityByDay[dk];
+        if (!existing || existing === 'Regular') {
+          agg.activityByDay[dk] = actLbl;
+        }
+      }
+    });
+
+    // Collect distinct normalised activity labels
+    if (actLbl && agg.activities.indexOf(actLbl) === -1) agg.activities.push(actLbl);
+
+    // Count leave types
+    var u = actRaw.toUpperCase();
+    if (u.indexOf('VACATION') !== -1) agg.vlCount++;
+    if (u.indexOf('ILLNESS')  !== -1) agg.slCount++;
+    if (u.indexOf('CDO')      !== -1) agg.cdoCount++;
+  });
+
+  return order.map(function(key) {
+    var r = map[key];
+    r.activity = r.activities.join(', ');
+    delete r.activities;
+    return r;
+  });
+}
+
+async function confirmUpload() {
+  if (!_uploadRows || !_uploadSchema) return;
+  var schema = _uploadSchema;
+  var rows   = _uploadRows;
+
+  // ILC pivot: collapse multi-activity rows into one per employee+weekending
+  if (schema.pivotIlc) {
+    rows = _pivotIlcRows(rows);
+  }
+
+  // Optional async pre-process hook (e.g. enrich rows from masterlist before write)
+  if (schema.preProcess) {
+    await schema.preProcess(rows);
+  }
+
+  // ── Close both modals immediately so the UI feels instant
+  closeUploadPreview();
+  closeUploadFinalConfirm();
+
+  var total = rows.length;
+  showToast('Uploading ' + total + ' record' + (total !== 1 ? 's' : '') + '…', '⏳');
+
+  try {
+    var col   = _fbDb.collection(schema.collection);
+    var BATCH = 490;
+    var ts    = firebase.firestore.FieldValue.serverTimestamp();
+
+    // Build all batches up-front (synchronous), then fire them in parallel
+    var batches = [];
+    var cur     = _fbDb.batch();
+    var count   = 0;
+
+    if (schema.idField) {
+      // Masterlist upsert: need existing doc IDs first
+      var snap     = await col.get();
+      var existing = {};
+      snap.forEach(function(d) {
+        var v = d.data()[schema.idField];
+        if (v) existing[String(v).trim()] = d.id;
+      });
+      for (var i = 0; i < rows.length; i++) {
+        var row = Object.assign({}, rows[i], { updatedAt: ts });
+        var key = String(row[schema.idField] || '').trim();
+        var ref = key && existing[key] ? col.doc(existing[key]) : col.doc();
+        cur.set(ref, row, { merge: true });
+        if (++count >= BATCH) { batches.push(cur); cur = _fbDb.batch(); count = 0; }
+      }
+    } else {
+      // Attendance / WFH: append rows
+      for (var i = 0; i < rows.length; i++) {
+        var row = Object.assign({}, rows[i], { uploadedAt: ts });
+        cur.set(col.doc(), row);
+        if (++count >= BATCH) { batches.push(cur); cur = _fbDb.batch(); count = 0; }
+      }
+    }
+    if (count > 0) batches.push(cur);
+
+    // Fire all batches in parallel
+    await Promise.all(batches.map(function(b) { return b.commit(); }));
+
+    showToast(total + ' record' + (total !== 1 ? 's' : '') + ' uploaded successfully.', '✅');
+    if (schema.onSuccess) schema.onSuccess(rows);
+
+  } catch(err) {
+    console.error('Upload commit error:', err);
+    showToast('Upload failed: ' + (err.message || String(err)), '❌');
+  }
+}
+
+// ──────────────────────────────────────────────
+// ── UPLOAD FINAL CONFIRM (WFH & Attendance)
+// ──────────────────────────────────────────────
+
+// Called when user clicks Upload in the preview modal and schema.requireFinalConfirm is set
+function _maybeFinalConfirm() {
+  if (!_uploadSchema || !_uploadSchema.requireFinalConfirm) {
+    confirmUpload();
+    return;
+  }
+  document.getElementById('upload-final-confirm-title').textContent = _uploadSchema.title;
+  document.getElementById('upload-final-confirm-msg').innerHTML     = _uploadSchema.finalConfirmMsg || 'Please confirm this upload is final.';
+  document.getElementById('upload-final-confirm-btn').disabled      = false;
+  document.getElementById('upload-final-confirm-btn').textContent   = 'Confirm & Upload';
+  document.getElementById('upload-final-confirm-overlay').classList.add('open');
+}
+
+function closeUploadFinalConfirm() {
+  document.getElementById('upload-final-confirm-overlay').classList.remove('open');
+}
+
+function proceedAfterFinalConfirm() {
+  closeUploadFinalConfirm();
+  confirmUpload();
+}
+
+// ── Full-month completeness check
+// Returns null if OK, or { lastDate, month, year, expectedLastDay } if incomplete
+function _checkIncompleteMonth(rows, dateKey) {
+  var MONTH_DAYS = [31,28,31,30,31,30,31,31,30,31,30,31];
+  var MONTHS     = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  // Parse a date string robustly → UTC Date or null
+  function parseUTC(raw) {
+    if (!raw) return null;
+    var d = new Date(raw);
+    if (!isNaN(d.getTime())) return d;
+    var parts = raw.split(/[\/\-\.]/);
+    if (parts.length === 3) {
+      d = new Date(parts[2] + '-' + parts[0].padStart(2,'0') + '-' + parts[1].padStart(2,'0'));
+      if (!isNaN(d.getTime())) return d;
+    }
+    return null;
+  }
+
+  // Collect all valid dates
+  var dates = [];
+  rows.forEach(function(r) {
+    var d = parseUTC((r[dateKey] || '').trim());
+    if (d) dates.push(d);
+  });
+  if (!dates.length) return null;
+
+  dates.sort(function(a, b) { return a - b; });
+
+  // Filing month = the month of the EARLIEST date in the file
+  var first       = dates[0];
+  var filingMonth = first.getUTCMonth();   // 0-based
+  var filingYear  = first.getUTCFullYear();
+
+  // Last calendar day of the filing month
+  var isLeap      = (filingYear % 4 === 0 && filingYear % 100 !== 0) || filingYear % 400 === 0;
+  var daysInMonth = MONTH_DAYS[filingMonth];
+  if (filingMonth === 1 && isLeap) daysInMonth = 29;
+
+  // Build a UTC Date for the last day of the filing month
+  var lastDayOfMonth = new Date(Date.UTC(filingYear, filingMonth, daysInMonth));
+
+  // The last weekending date in the file (the largest date value)
+  var lastWE = dates[dates.length - 1];
+
+  // The week that ends on lastWE runs Sat(−6) → Fri(0)
+  // It covers the filing month if lastDayOfMonth falls within [lastWE−6, lastWE]
+  var weekSat = new Date(lastWE);
+  weekSat.setUTCDate(lastWE.getUTCDate() - 6);
+
+  var coversLastDay = lastDayOfMonth >= weekSat && lastDayOfMonth <= lastWE;
+
+  if (!coversLastDay) {
+    return {
+      lastDate:        lastWE.toISOString().substring(0, 10),
+      month:           MONTHS[filingMonth],
+      year:            String(filingYear),
+      expectedLastDay: daysInMonth
+    };
+  }
+  return null;  // full month covered
+}
+
+// ──────────────────────────────────────────────
+// ── INCOMPLETE MONTH MODAL
+// ──────────────────────────────────────────────
+function closeIncompleteMonthModal() {
+  document.getElementById('upload-incomplete-month-overlay').classList.remove('open');
+  // Also close the preview so the user can start fresh
+  closeUploadPreview();
+}
+
+// ──────────────────────────────────────────────
+// ── DELETE ATTENDANCE REPORT (visible records)
+// ──────────────────────────────────────────────
+var _deleteAttReportType = null;   // 'ilc' | 'monday'
+var _deleteAttReportIds  = [];     // doc IDs to delete, snapshotted when modal opens
+
+function openDeleteAttReportModal(type) {
+  _deleteAttReportType = type;
+
+  // Snapshot the currently-filtered record IDs from the page
+  var filtered;
+  if (type === 'ilc') {
+    var year       = document.getElementById('monthly-att-year').value;
+    var month      = document.getElementById('monthly-att-month').value;
+    var weekending = document.getElementById('monthly-att-weekending').value;
+    var email      = document.getElementById('monthly-att-email').value;
+    filtered = _monthlyAttRecords.filter(function(r) {
+      if (year       && String(r.year || (r.weekending || '').substring(0,4)) !== year) return false;
+      if (month      && r.month !== month)                                               return false;
+      if (weekending && (r.weekending || '') !== weekending)                             return false;
+      if (email      && (r.email      || '') !== email)                                  return false;
+      return true;
+    });
+  } else {
+    var year2   = document.getElementById('monday-att-year').value;
+    var month2  = document.getElementById('monday-att-month').value;
+    var email2  = document.getElementById('monday-att-email').value;
+    var group2  = document.getElementById('monday-att-group').value;
+    filtered = _mondayAttRecords.filter(function(r) {
+      if (year2  && String(r.year || (r.date || '').substring(0,4)) !== year2) return false;
+      if (month2 && r.month !== month2)                                         return false;
+      if (email2 && (r.email || '') !== email2)                                 return false;
+      if (group2 && (r.group || '') !== group2)                                 return false;
+      return true;
+    });
+  }
+
+  _deleteAttReportIds = filtered.map(function(r) { return r._id; }).filter(Boolean);
+
+  var subEl = document.getElementById('delete-att-report-sub');
+  var errEl = document.getElementById('delete-att-report-error');
+  errEl.textContent = '';
+
+  if (_deleteAttReportIds.length === 0) {
+    subEl.textContent = 'No records are currently visible. Apply filters on the page first, then click Delete Report.';
+    document.getElementById('delete-att-report-confirm-btn').disabled = true;
+  } else {
+    var label = type === 'ilc' ? 'Monthly Attendance (ILC)' : 'Monthly Attendance (Monday.com)';
+    subEl.innerHTML = '<strong>' + _deleteAttReportIds.length + ' ' + label + ' record' +
+      (_deleteAttReportIds.length === 1 ? '' : 's') +
+      '</strong> currently visible will be permanently deleted. This cannot be undone.';
+    document.getElementById('delete-att-report-confirm-btn').disabled = false;
+  }
+
+  document.getElementById('delete-att-report-confirm-btn').textContent = 'Delete Records';
+  document.getElementById('delete-att-report-overlay').classList.add('open');
+}
+
+function closeDeleteAttReportModal() {
+  document.getElementById('delete-att-report-overlay').classList.remove('open');
+  _deleteAttReportType = null;
+  _deleteAttReportIds  = [];
+}
+
+function confirmDeleteAttReport() {
+  var errEl = document.getElementById('delete-att-report-error');
+  errEl.textContent = '';
+  var ids = _deleteAttReportIds.slice();
+  if (!ids.length) return;
+
+  var isIlc      = _deleteAttReportType === 'ilc';
+  var collection = isIlc ? 'monthlyAttendance' : 'mondayAttendance';
+
+  // ── 1. Remove from in-memory array instantly ──────────────────────────────
+  var idSet = {};
+  ids.forEach(function(id) { idSet[id] = true; });
+  if (isIlc) {
+    _monthlyAttRecords = _monthlyAttRecords.filter(function(r) { return !idSet[r._id]; });
+    _renderMonthlyAtt();
+  } else {
+    _mondayAttRecords = _mondayAttRecords.filter(function(r) { return !idSet[r._id]; });
+    _renderMondayAtt();
+  }
+
+  // ── 2. Close modal + toast immediately ───────────────────────────────────
+  closeDeleteAttReportModal();
+  showToast(ids.length + ' record' + (ids.length === 1 ? '' : 's') + ' deleted.', '🗑️');
+
+  // ── 3. Fire-and-forget Firestore deletes in the background ────────────────
+  var BATCH_SIZE = 490, batches = [];
+  for (var i = 0; i < ids.length; i += BATCH_SIZE) {
+    var batch = _fbDb.batch();
+    ids.slice(i, i + BATCH_SIZE).forEach(function(id) {
+      batch.delete(_fbDb.collection(collection).doc(id));
+    });
+    batches.push(batch);
+  }
+  Promise.all(batches.map(function(b) { return b.commit(); })).catch(function(err) {
+    console.warn('Delete background write error:', err);
+    showToast('Delete queued — will complete when connection recovers.', '⚠️');
+  });
 }
 
 // ──────────────────────────────────────────────
