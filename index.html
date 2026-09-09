@@ -3108,8 +3108,11 @@
   .ilc-table .col-day    { width: 52px; text-align: center; }
   .ilc-table .col-total  { width: 58px; text-align: right; }
   .ilc-table .col-ot     { width: 52px; text-align: right; }
-  .ilc-table .col-vl     { width: 40px; text-align: right; }
-  .ilc-table .col-sl     { width: 40px; text-align: right; }
+  .ilc-table .col-vl       { width: 40px; text-align: right; }
+  .ilc-table .col-sl       { width: 40px; text-align: right; }
+  .ilc-table .col-variance { width: 52px; text-align: center; }
+  .ilc-table td.ilc-variance-yes  { text-align:center; font-weight:700; color:var(--danger); }
+  .ilc-table td.ilc-variance-no   { text-align:center; font-weight:600; color:var(--muted); }
   .ilc-table th.ilc-weekend { background: rgba(99,102,241,0.09); }
   .ilc-table td.ilc-weekend { background: rgba(99,102,241,0.04); }
   .ilc-table th .ilc-th-day  { display:block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; }
@@ -3143,6 +3146,17 @@
   .ilc-day-tag-utnw { background: rgba(239,68,68,0.14);  color: #991b1b; }
   .ilc-day-tag-empl { background: rgba(107,114,128,0.14);color: #374151; }
   .ilc-day-tag-misc { background: var(--surface3);       color: var(--muted); }
+  /* Half-day: cell wrapper keeps the number + badges stacked neatly */
+  .ilc-day-inner    { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+  /* Subtle amber tint on the cell when two activities share the day */
+  .ilc-table td.ilc-half-day { background: rgba(245,158,11,0.07) !important; }
+  /* ½ indicator badge */
+  .ilc-half-badge {
+    display: inline-block; font-size: 9px; font-weight: 800; line-height: 1;
+    background: rgba(245,158,11,0.18); color: #b45309;
+    border-radius: 3px; padding: 0 3px; margin-bottom: 1px;
+    letter-spacing: 0.2px;
+  }
 
   /* ─── STATUS PILLS ─── */
   .pill-active   { background: rgba(5,150,105,0.12); color: var(--success); border: 1px solid rgba(5,150,105,0.25); padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
@@ -3479,30 +3493,37 @@
           <button class="btn btn-danger btn-sm" onclick="openDeleteAttReportModal('ilc')">🗑 Delete Report</button>
         </div>
       </div>
-      <div class="page-toolbar">
-        <select id="monthly-att-year" onchange="filterMonthlyAtt()"><option value="">Year</option></select>
-        <select id="monthly-att-month" onchange="filterMonthlyAtt()">
-          <option value="">Month</option>
-          <option>January</option><option>February</option><option>March</option>
-          <option>April</option><option>May</option><option>June</option>
-          <option>July</option><option>August</option><option>September</option>
-          <option>October</option><option>November</option><option>December</option>
-        </select>
-        <select id="monthly-att-weekending" onchange="filterMonthlyAtt()"><option value="">Weekending (All)</option></select>
-        <select id="monthly-att-email" onchange="filterMonthlyAtt()"><option value="">Email (All)</option></select>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 0 4px;justify-content:flex-end;">
-        <span style="font-size:11px;color:var(--muted);font-weight:600;margin-right:4px;letter-spacing:.04em;">ACTIVITY LEGEND</span>
-        <span class="tag" style="background:rgba(16,185,129,0.06);color:#6b7280;border-color:rgba(107,114,128,0.2);" title="General Billable">GB</span>
-        <span class="tag tag-green"  title="Vacation Leave">VL</span>
-        <span class="tag tag-yellow" title="Sick Leave">SL</span>
-        <span class="tag tag-blue"   title="Designated Holiday">HOL</span>
-        <span class="tag tag-cyan"   title="Optional Holiday">OHOL</span>
-        <span class="tag tag-purple" title="Compensatory Day Off">CDO</span>
-        <span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid rgba(236,72,153,0.25);background:rgba(236,72,153,0.10);color:#be185d;" title="Parenting Leave">PRNT</span>
-        <span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid rgba(245,158,11,0.25);background:rgba(245,158,11,0.10);color:#92400e;" title="Paid Time Not Worked">PTNW</span>
-        <span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid rgba(239,68,68,0.25);background:rgba(239,68,68,0.10);color:#991b1b;" title="Unpaid Time Not Worked">UTNW</span>
-        <span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;border:1px solid rgba(107,114,128,0.25);background:rgba(107,114,128,0.10);color:#374151;" title="Pre/Post IBM Employment">EMPL</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px;">
+        <!-- Filters (left) -->
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <select id="monthly-att-year" onchange="filterMonthlyAtt()" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:7px 12px;outline:none;"><option value="">Year</option></select>
+          <select id="monthly-att-month" onchange="filterMonthlyAtt()" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:7px 12px;outline:none;">
+            <option value="">Month</option>
+            <option>January</option><option>February</option><option>March</option>
+            <option>April</option><option>May</option><option>June</option>
+            <option>July</option><option>August</option><option>September</option>
+            <option>October</option><option>November</option><option>December</option>
+          </select>
+          <select id="monthly-att-weekending" onchange="filterMonthlyAtt()" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:7px 12px;outline:none;"><option value="">Weekending (All)</option></select>
+          <select id="monthly-att-name"       onchange="filterMonthlyAtt()" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:7px 12px;outline:none;"><option value="">Name (All)</option></select>
+          <select id="monthly-att-serial"     onchange="filterMonthlyAtt()" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:7px 12px;outline:none;"><option value="">IBM Serial No. (All)</option></select>
+          <select id="monthly-att-activity"   onchange="filterMonthlyAtt()" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:7px 12px;outline:none;"><option value="">Activity (All)</option></select>
+        </div>
+        <!-- Activity Legend (right, compact) -->
+        <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
+          <span style="font-size:10px;color:var(--muted);font-weight:600;margin-right:2px;letter-spacing:.04em;white-space:nowrap;">ACTIVITY LEGEND</span>
+          <span class="tag" style="background:rgba(16,185,129,0.06);color:#6b7280;border-color:rgba(107,114,128,0.2);font-size:10px;padding:1px 6px;" title="General Billable">GB</span>
+          <span class="tag tag-green"  style="font-size:10px;padding:1px 6px;" title="Vacation Leave">VL</span>
+          <span class="tag tag-yellow" style="font-size:10px;padding:1px 6px;" title="Sick Leave">SL</span>
+          <span class="tag tag-blue"   style="font-size:10px;padding:1px 6px;" title="Designated Holiday">HOL</span>
+          <span class="tag tag-cyan"   style="font-size:10px;padding:1px 6px;" title="Optional Holiday">OHOL</span>
+          <span class="tag tag-purple" style="font-size:10px;padding:1px 6px;" title="Compensatory Day Off">CDO</span>
+          <span style="display:inline-flex;align-items:center;padding:1px 6px;border-radius:20px;font-size:10px;font-weight:600;border:1px solid rgba(236,72,153,0.25);background:rgba(236,72,153,0.10);color:#be185d;" title="Parenting Leave">PRNT</span>
+          <span style="display:inline-flex;align-items:center;padding:1px 6px;border-radius:20px;font-size:10px;font-weight:600;border:1px solid rgba(245,158,11,0.25);background:rgba(245,158,11,0.10);color:#92400e;" title="Paid Time Not Worked">PTNW</span>
+          <span style="display:inline-flex;align-items:center;padding:1px 6px;border-radius:20px;font-size:10px;font-weight:600;border:1px solid rgba(239,68,68,0.25);background:rgba(239,68,68,0.10);color:#991b1b;" title="Unpaid Time Not Worked">UTNW</span>
+          <span style="display:inline-flex;align-items:center;padding:1px 6px;border-radius:20px;font-size:10px;font-weight:600;border:1px solid rgba(107,114,128,0.25);background:rgba(107,114,128,0.10);color:#374151;" title="Pre/Post IBM Employment">EMPL</span>
+          <span style="display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:20px;font-size:10px;font-weight:600;border:1px solid rgba(245,158,11,0.3);background:rgba(245,158,11,0.10);color:#b45309;" title="Half-day: two activities share one day (e.g. 4.5h GB + 4h VL)"><span style="font-size:11px;font-weight:800;">½</span> Half-day</span>
+        </div>
       </div>
       <div id="monthly-att-body">
         <div class="ilc-table-wrap">
@@ -3512,7 +3533,7 @@
               <col class="col-we"><col class="col-act">
               <col class="col-day"><col class="col-day">
               <col class="col-day"><col class="col-day"><col class="col-day"><col class="col-day"><col class="col-day">
-              <col class="col-total"><col class="col-ot"><col class="col-vl"><col class="col-sl">
+              <col class="col-total"><col class="col-ot"><col class="col-vl"><col class="col-sl"><col class="col-variance">
             </colgroup>
             <thead id="monthly-att-thead"><tr>
               <th class="col-serial">IBM Serial No.</th><th class="col-name">Name</th><th class="col-acct">Email</th>
@@ -3521,9 +3542,10 @@
               <th class="col-day">Mon</th><th class="col-day">Tue</th><th class="col-day">Wed</th><th class="col-day">Thu</th><th class="col-day">Fri</th>
               <th class="col-total">Total Hrs</th><th class="col-ot">OT Hrs</th>
               <th class="col-vl">VL</th><th class="col-sl">SL</th>
+              <th class="col-variance" title="Half-day variance count: days where 2 activities share a day but total ≠ 8.5">Var</th>
             </tr></thead>
             <tbody id="monthly-att-tbody">
-              <tr><td colspan="16" style="text-align:center;color:var(--muted);padding:32px;">Select a year and month, or upload an ILC file to see records.</td></tr>
+              <tr><td colspan="17" style="text-align:center;color:var(--muted);padding:32px;">Select a year and month, or upload an ILC file to see records.</td></tr>
             </tbody>
           </table>
         </div>
@@ -3556,7 +3578,7 @@
           <option>July</option><option>August</option><option>September</option>
           <option>October</option><option>November</option><option>December</option>
         </select>
-        <select id="monday-att-email" onchange="filterMondayAtt()"><option value="">Email (All)</option></select>
+        <select id="monday-att-name"  onchange="filterMondayAtt()"><option value="">Name (All)</option></select>
         <select id="monday-att-group" onchange="filterMondayAtt()"><option value="">Group (All)</option></select>
       </div>
       <div id="monday-att-body">
@@ -4940,37 +4962,51 @@ async function deleteServiceLine(docId) {
 // ──────────────────────────────────────────────
 // ── ADMIN: MASTERLIST
 // ──────────────────────────────────────────────
+var _masterlistRecords = [];
+
 function loadMasterlist() {
   if (!_fbDb) return;
   var tbody = document.getElementById('masterlist-tbody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>';
   _fbDb.collection('masterlist').orderBy('name').get().then(function(snap) {
-    if (snap.empty) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">No records. Upload a masterlist CSV or add employees via Onboarding.</td></tr>';
-      return;
-    }
-    var rows = '';
-    snap.forEach(function(d) {
-      var e = d.data();
-      var statusPill = e.status === 'Active'
-        ? '<span class="pill-active">Active</span>'
-        : '<span class="pill-inactive">' + escapeHtml(e.status || 'Inactive') + '</span>';
-      rows += '<tr>' +
-        '<td>' + escapeHtml(e.ibmSerialNo || '') + '</td>' +
-        '<td>' + escapeHtml(e.name || '') + '</td>' +
-        '<td>' + escapeHtml(e.email || '') + '</td>' +
-        '<td><span class="tag tag-blue">' + escapeHtml(e.serviceLine || '') + '</span></td>' +
-        '<td>' + statusPill + '</td>' +
-        '<td style="white-space:nowrap;">' +
-          '<button class="btn btn-ghost btn-sm" onclick="toggleMasterlistStatus(\'' + d.id + '\',\'' + escapeHtml(e.status||'Active') + '\')">' + (e.status === 'Active' ? 'Set Inactive' : 'Set Active') + '</button>' +
-        '</td></tr>';
-    });
-    tbody.innerHTML = rows;
+    _masterlistRecords = [];
+    snap.forEach(function(d) { _masterlistRecords.push(Object.assign({ _id: d.id }, d.data())); });
+    _renderMasterlist();
   }).catch(function(err) {
     tbody.innerHTML = '<tr><td colspan="6" style="color:var(--danger);padding:16px;">Error loading masterlist.</td></tr>';
     console.error(err);
   });
+}
+
+function _renderMasterlist() {
+  var tbody = document.getElementById('masterlist-tbody');
+  if (!tbody) return;
+  // Sort: last name A–Z always
+  var sorted = _masterlistRecords.slice().sort(function(a, b) {
+    var nA = _lastNameKey(a.name), nB = _lastNameKey(b.name);
+    return nA < nB ? -1 : nA > nB ? 1 : 0;
+  });
+  if (!sorted.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">No records. Upload a masterlist CSV or add employees via Onboarding.</td></tr>';
+    return;
+  }
+  var rows = '';
+  sorted.forEach(function(e) {
+    var statusPill = e.status === 'Active'
+      ? '<span class="pill-active">Active</span>'
+      : '<span class="pill-inactive">' + escapeHtml(e.status || 'Inactive') + '</span>';
+    rows += '<tr>' +
+      '<td>' + escapeHtml(e.ibmSerialNo || '') + '</td>' +
+      '<td>' + escapeHtml(e.name || '') + '</td>' +
+      '<td>' + escapeHtml(e.email || '') + '</td>' +
+      '<td><span class="tag tag-blue">' + escapeHtml(e.serviceLine || '') + '</span></td>' +
+      '<td>' + statusPill + '</td>' +
+      '<td style="white-space:nowrap;">' +
+        '<button class="btn btn-ghost btn-sm" onclick="toggleMasterlistStatus(\'' + e._id + '\',\'' + escapeHtml(e.status||'Active') + '\')">' + (e.status === 'Active' ? 'Set Inactive' : 'Set Active') + '</button>' +
+      '</td></tr>';
+  });
+  tbody.innerHTML = rows;
 }
 
 async function toggleMasterlistStatus(docId, currentStatus) {
@@ -5227,13 +5263,35 @@ function loadMonthlyAttendance(forceServer) {
     _monthlyAttRecords = [];
     snap.forEach(function(d) { _monthlyAttRecords.push(Object.assign({ _id: d.id }, d.data())); });
     _populateYearDropdown('monthly-att-year', _monthlyAttRecords);
-    _populateFilterDropdown('monthly-att-email',     _monthlyAttRecords, 'email',       'Email (All)');
+    _populateFilterDropdown('monthly-att-name',      _monthlyAttRecords, 'name',        'Name (All)');
     _populateFilterDropdown('monthly-att-weekending', _monthlyAttRecords, 'weekending',  'Weekending (All)');
+    _populateFilterDropdown('monthly-att-serial',    _monthlyAttRecords, 'ibmSerialNo', 'IBM Serial No. (All)');
+    _populateIlcActivityFilter(_monthlyAttRecords);
     _renderMonthlyAtt();
   }).catch(function(err) { console.error(err); });
 }
 
 function filterMonthlyAtt() { _renderMonthlyAtt(); }
+
+// Populate the Activity filter from all distinct normalised activity labels in the dataset
+function _populateIlcActivityFilter(records) {
+  var sel = document.getElementById('monthly-att-activity');
+  if (!sel) return;
+  var current = sel.value;
+  var seen = {};
+  var labels = [];
+  records.forEach(function(r) {
+    (r.activity || '').split(',').forEach(function(a) {
+      var lbl = a.trim().toUpperCase();
+      if (lbl && !seen[lbl]) { seen[lbl] = true; labels.push(lbl); }
+    });
+  });
+  labels.sort();
+  sel.innerHTML = '<option value="">Activity (All)</option>' +
+    labels.map(function(l) {
+      return '<option value="' + l + '"' + (l === current ? ' selected' : '') + '>' + l + '</option>';
+    }).join('');
+}
 
 function _renderMonthlyAtt() {
   var tbody = document.getElementById('monthly-att-tbody');
@@ -5243,19 +5301,33 @@ function _renderMonthlyAtt() {
   var year       = document.getElementById('monthly-att-year').value;
   var month      = document.getElementById('monthly-att-month').value;
   var weekending = document.getElementById('monthly-att-weekending').value;
-  var email      = document.getElementById('monthly-att-email').value;
+  var nameFilter = document.getElementById('monthly-att-name').value;
+  var serial     = document.getElementById('monthly-att-serial').value;
+  var actFilter  = document.getElementById('monthly-att-activity').value;
 
   var filtered = _monthlyAttRecords.filter(function(r) {
     if (year       && String(r.year || (r.weekending || '').substring(0,4)) !== year) return false;
     if (month      && r.month !== month)                                               return false;
     if (weekending && (r.weekending || '') !== weekending)                             return false;
-    if (email      && (r.email      || '') !== email)                                  return false;
+    if (nameFilter && (r.name || '') !== nameFilter)                                   return false;
+    if (serial     && (r.ibmSerialNo || '') !== serial)                                return false;
+    if (actFilter) {
+      var acts = (r.activity || '').split(',').map(function(a){ return a.trim().toUpperCase(); });
+      if (acts.indexOf(actFilter.toUpperCase()) === -1) return false;
+    }
     return true;
   });
-  // Sort: weekending asc (first week first), then last name A–Z
+  // Parse weekending string (e.g. "Aug 7, 2026") into a comparable timestamp.
+  // Falls back to 0 so unparseable dates sort first without crashing.
+  function _weTs(r) {
+    var d = new Date(r.weekending || '');
+    return isNaN(d.getTime()) ? 0 : d.getTime();
+  }
+
+  // Both filtered and unfiltered: weekending asc (chronological) first, then last name A–Z
   filtered.sort(function(a, b) {
-    var weA = a.weekending || '', weB = b.weekending || '';
-    if (weA < weB) return -1; if (weA > weB) return 1;
+    var tDiff = _weTs(a) - _weTs(b);
+    if (tDiff !== 0) return tDiff;
     var nA = _lastNameKey(a.name), nB = _lastNameKey(b.name);
     return nA < nB ? -1 : nA > nB ? 1 : 0;
   });
@@ -5268,11 +5340,12 @@ function _renderMonthlyAtt() {
     '<th class="col-day">Thu</th><th class="col-day">Fri</th>' +
     '<th class="col-total">Total Hrs</th><th class="col-ot">OT Hrs</th>' +
     '<th class="col-vl">VL</th><th class="col-sl">SL</th>' +
+    '<th class="col-variance" title="Half-day variance count: days where 2 activities share a day but total ≠ 8.5">Var</th>' +
   '</tr>';
 
   if (!filtered.length) {
     if (thead) thead.innerHTML = EMPTY_HEAD;
-    tbody.innerHTML = '<tr><td colspan="16" style="text-align:center;color:var(--muted);padding:32px;">No records match the selected filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="17" style="text-align:center;color:var(--muted);padding:32px;">No records match the selected filters.</td></tr>';
     return;
   }
 
@@ -5300,6 +5373,7 @@ function _renderMonthlyAtt() {
       '<th class="col-ot">OT</th>' +
       '<th class="col-vl" title="Vacation Leave count">VL</th>' +
       '<th class="col-sl" title="Sick Leave count">SL</th>' +
+      '<th class="col-variance" title="Half-day variance count: days where 2 activities share a day but total ≠ 8.5">Var</th>' +
     '</tr>';
   }
 
@@ -5309,32 +5383,34 @@ function _renderMonthlyAtt() {
     'PRNT':'prnt','PTNW':'ptnw','UTNW':'utnw','EMPL':'empl'
   };
 
-  // Helper: format numeric day cell, optional actCode colours the cell
+  // Helper: format numeric day cell, optional actCode colours the cell.
+  // actCode may now be an array of labels (half-day = multiple activities on one day).
   function dayCell(val, isWeekend, actCode) {
     var cls = 'ilc-num col-day' + (isWeekend ? ' ilc-weekend' : '');
     if (val === 0) return '<td class="' + cls + '">—</td>';
     var otCls = isWeekend ? ' ilc-ot-we' : (val > 9 ? ' ilc-ot' : '');
-    var tagHtml = '';
-    if (actCode) {
-      var code = actCode.trim().toUpperCase();
+
+    // Normalise to array
+    var codes = Array.isArray(actCode) ? actCode : (actCode ? [actCode] : []);
+    var isHalfDay = codes.length > 1;
+
+    var tagHtml = codes.map(function(c) {
+      var code   = c.trim().toUpperCase();
       var tagCls = ACT_TAG_CLS[code] || 'misc';
-      tagHtml = '<span class="ilc-day-tag ilc-day-tag-' + tagCls + '">' + escapeHtml(code) + '</span>';
-    }
-    return '<td class="' + cls + otCls + '" style="vertical-align:middle;text-align:center;">' + val + tagHtml + '</td>';
+      return '<span class="ilc-day-tag ilc-day-tag-' + tagCls + '">' + escapeHtml(code) + '</span>';
+    }).join('');
+
+    var halfBadge = isHalfDay
+      ? '<span class="ilc-half-badge" title="Half-day leave">½</span>'
+      : '';
+
+    var inner = '<div class="ilc-day-inner">' + val + halfBadge + tagHtml + '</div>';
+    return '<td class="' + cls + otCls + (isHalfDay ? ' ilc-half-day' : '') + '" style="vertical-align:middle;text-align:center;">' + inner + '</td>';
   }
 
   tbody.innerHTML = filtered.map(function(r) {
-    // Activities stored as comma-separated string (after pivot) or single value
-    var actRaw   = r.activity || '';
-    var actList  = actRaw.split(',').map(function(a) { return a.trim().toUpperCase(); });
-    var isVariance = actList.some(function(act) {
-      return ILC_VARIANCE_ACTIVITIES.has(act);
-    }) && [
-      parseFloat(r.saturday||0)||0, parseFloat(r.sunday||0)||0,
-      parseFloat(r.monday||0)||0,   parseFloat(r.tuesday||0)||0,
-      parseFloat(r.wednesday||0)||0,parseFloat(r.thursday||0)||0,
-      parseFloat(r.friday||0)||0
-    ].some(function(h) { return h > 0 && h !== 8; });
+    var actRaw  = r.activity || '';
+    var actList = actRaw.split(',').map(function(a) { return a.trim().toUpperCase(); });
 
     var abd = r.activityByDay || {};
 
@@ -5346,6 +5422,26 @@ function _renderMonthlyAtt() {
     var thu = parseFloat(r.thursday  || 0) || 0;
     var fri = parseFloat(r.friday    || 0) || 0;
 
+    // ── Half-day variance: count days that have 2 activities but total ≠ 8.5
+    var DAY_KEYS_RENDER = ['saturday','sunday','monday','tuesday','wednesday','thursday','friday'];
+    var dayVals = { saturday:sat, sunday:sun, monday:mon, tuesday:tue, wednesday:wed, thursday:thu, friday:fri };
+    var halfDayVarianceCount = 0;
+    DAY_KEYS_RENDER.forEach(function(dk) {
+      var codes = Array.isArray(abd[dk]) ? abd[dk] : (abd[dk] ? [abd[dk]] : []);
+      if (codes.length > 1) {
+        // This day has multiple activities (half-day). Total for this day must be 8.5.
+        if (Math.abs(dayVals[dk] - 8.5) > 0.001) halfDayVarianceCount++;
+      }
+    });
+
+    // ── Existing variance logic (activity code anomalies, hours ≠ 8)
+    var isVariance = actList.some(function(act) {
+      return ILC_VARIANCE_ACTIVITIES.has(act);
+    }) && [sat,sun,mon,tue,wed,thu,fri].some(function(h) { return h > 0 && h !== 8; });
+
+    // If any half-day variance exists, also flag the activity cell
+    var hasHalfDayVar = halfDayVarianceCount > 0;
+
     var total     = sat + sun + mon + tue + wed + thu + fri;
     var otWeekday = [mon,tue,wed,thu,fri].reduce(function(a,h){ return a + (h>9?h-9:0); }, 0);
     var ot        = otWeekday + sat + sun;
@@ -5353,10 +5449,7 @@ function _renderMonthlyAtt() {
     var sl        = parseInt(r.slCount || 0) || 0;
 
     var actDisplay = actRaw.split(',').map(function(a) { return escapeHtml(a.trim()); }).join(', ');
-    var actCell = isVariance
-      ? '<td class="col-act"><div class="ilc-activity-cell">' + actDisplay +
-        '<span class="ilc-variance-badge">⚑ Variance</span></div></td>'
-      : '<td class="col-act">' + actDisplay + '</td>';
+    var actCell = '<td class="col-act">' + actDisplay + '</td>';
 
     return '<tr>' +
       '<td class="col-serial">' + escapeHtml(r.ibmSerialNo || '') + '</td>' +
@@ -5369,8 +5462,11 @@ function _renderMonthlyAtt() {
       dayCell(wed, false, abd.wednesday) + dayCell(thu, false, abd.thursday) + dayCell(fri, false, abd.friday) +
       '<td class="ilc-num col-total ilc-total">'        + (total > 0 ? total : '—') + '</td>' +
       '<td class="ilc-num col-ot ilc-computed-ot">'     + (ot    > 0 ? ot    : '—') + '</td>' +
-      '<td class="ilc-vl col-vl">' + (vl > 0 ? vl : '—') + '</td>' +
-      '<td class="ilc-sl col-sl">' + (sl > 0 ? sl : '—') + '</td>' +
+      '<td class="ilc-vl col-vl">'                      + (vl    > 0 ? vl    : '—') + '</td>' +
+      '<td class="ilc-sl col-sl">'                      + (sl    > 0 ? sl    : '—') + '</td>' +
+      (halfDayVarianceCount > 0
+        ? '<td class="ilc-variance-yes col-variance">Yes</td>'
+        : '<td class="ilc-variance-no  col-variance">No</td>') +
     '</tr>';
   }).join('');
 }
@@ -5435,7 +5531,7 @@ function loadMondayAttendance(forceServer) {
     _mondayAttRecords = [];
     attSnap.forEach(function(d) { _mondayAttRecords.push(Object.assign({ _id: d.id }, d.data())); });
     _populateYearDropdown('monday-att-year', _mondayAttRecords);
-    _populateFilterDropdown('monday-att-email', _mondayAttRecords, 'email', 'Email (All)');
+    _populateFilterDropdown('monday-att-name', _mondayAttRecords, 'name', 'Name (All)');
     // Populate group dropdown from service line codes
     var sel = document.getElementById('monday-att-group');
     if (sel) {
@@ -5455,21 +5551,22 @@ function filterMondayAtt() { _renderMondayAtt(); }
 function _renderMondayAtt() {
   var tbody = document.getElementById('monday-att-tbody');
   if (!tbody) return;
-  var year    = document.getElementById('monday-att-year').value;
-  var month   = document.getElementById('monday-att-month').value;
-  var email   = document.getElementById('monday-att-email').value;
-  var group   = document.getElementById('monday-att-group').value;
+  var year       = document.getElementById('monday-att-year').value;
+  var month      = document.getElementById('monday-att-month').value;
+  var nameFilter = document.getElementById('monday-att-name').value;
+  var group      = document.getElementById('monday-att-group').value;
   var filtered = _mondayAttRecords.filter(function(r) {
-    if (year  && String(r.year || (r.date || '').substring(0,4)) !== year) return false;
-    if (month && r.month !== month)                                         return false;
-    if (email && (r.email || '') !== email)                                 return false;
-    if (group && (r.group || '') !== group)                                 return false;
+    if (year       && String(r.year || (r.date || '').substring(0,4)) !== year) return false;
+    if (month      && r.month !== month)                                         return false;
+    if (nameFilter && (r.name || '') !== nameFilter)                             return false;
+    if (group      && (r.group || '') !== group)                                 return false;
     return true;
   });
-  // Sort: date asc (first day of month first), then last name A–Z
+  // Sort: date asc chronologically first, then last name A–Z
   filtered.sort(function(a, b) {
-    var dA = a.date || '', dB = b.date || '';
-    if (dA < dB) return -1; if (dA > dB) return 1;
+    var tA = new Date(a.date || ''), tB = new Date(b.date || '');
+    var tDiff = (isNaN(tA) ? 0 : tA.getTime()) - (isNaN(tB) ? 0 : tB.getTime());
+    if (tDiff !== 0) return tDiff;
     var nA = _lastNameKey(a.name), nB = _lastNameKey(b.name);
     return nA < nB ? -1 : nA > nB ? 1 : 0;
   });
@@ -6116,16 +6213,16 @@ function _pivotIlcRows(rows) {
     var actRaw = (row.activity || '').trim();
     var actLbl = _normaliseActivity(actRaw);
 
-    // Sum hours per day — and tag the day with the activity label if non-zero
+    // Sum hours per day — and tag the day with ALL distinct activity labels
     DAY_KEYS.forEach(function(dk) {
       var hrs = parseFloat(row[dk] || 0) || 0;
       agg[dk] += hrs;
-      // Tag this day with the activity label when hours are logged under it
+      // Accumulate distinct activity labels for this day (supports half-day combos)
       if (hrs > 0 && actLbl) {
-        // Keep first non-Regular label; or overwrite if current is a special code
-        var existing = agg.activityByDay[dk];
-        if (!existing || existing === 'Regular') {
-          agg.activityByDay[dk] = actLbl;
+        if (!agg.activityByDay[dk]) {
+          agg.activityByDay[dk] = [actLbl];
+        } else if (agg.activityByDay[dk].indexOf(actLbl) === -1) {
+          agg.activityByDay[dk].push(actLbl);
         }
       }
     });
@@ -6330,24 +6427,31 @@ function openDeleteAttReportModal(type) {
     var year       = document.getElementById('monthly-att-year').value;
     var month      = document.getElementById('monthly-att-month').value;
     var weekending = document.getElementById('monthly-att-weekending').value;
-    var email      = document.getElementById('monthly-att-email').value;
+    var nameFilter = document.getElementById('monthly-att-name').value;
+    var serial     = document.getElementById('monthly-att-serial').value;
+    var actFilter  = document.getElementById('monthly-att-activity').value;
     filtered = _monthlyAttRecords.filter(function(r) {
       if (year       && String(r.year || (r.weekending || '').substring(0,4)) !== year) return false;
       if (month      && r.month !== month)                                               return false;
       if (weekending && (r.weekending || '') !== weekending)                             return false;
-      if (email      && (r.email      || '') !== email)                                  return false;
+      if (nameFilter && (r.name || '') !== nameFilter)                                   return false;
+      if (serial     && (r.ibmSerialNo || '') !== serial)                                return false;
+      if (actFilter) {
+        var acts = (r.activity || '').split(',').map(function(a){ return a.trim().toUpperCase(); });
+        if (acts.indexOf(actFilter.toUpperCase()) === -1) return false;
+      }
       return true;
     });
   } else {
     var year2   = document.getElementById('monday-att-year').value;
     var month2  = document.getElementById('monday-att-month').value;
-    var email2  = document.getElementById('monday-att-email').value;
-    var group2  = document.getElementById('monday-att-group').value;
+    var nameFilter2 = document.getElementById('monday-att-name').value;
+    var group2      = document.getElementById('monday-att-group').value;
     filtered = _mondayAttRecords.filter(function(r) {
-      if (year2  && String(r.year || (r.date || '').substring(0,4)) !== year2) return false;
-      if (month2 && r.month !== month2)                                         return false;
-      if (email2 && (r.email || '') !== email2)                                 return false;
-      if (group2 && (r.group || '') !== group2)                                 return false;
+      if (year2       && String(r.year || (r.date || '').substring(0,4)) !== year2) return false;
+      if (month2      && r.month !== month2)                                         return false;
+      if (nameFilter2 && (r.name || '') !== nameFilter2)                             return false;
+      if (group2      && (r.group || '') !== group2)                                 return false;
       return true;
     });
   }
