@@ -5827,10 +5827,12 @@ function _renderMonthlyAtt() {
       }
     });
 
-    // ── Existing variance logic (activity code anomalies, hours ≠ 8)
+    // ── Variance logic: flag only when hours ≠ 8 AND not an expected GB+Activity combo (8.5 or 9)
     var isVariance = actList.some(function(act) {
       return ILC_VARIANCE_ACTIVITIES.has(act);
-    }) && [sat,sun,mon,tue,wed,thu,fri].some(function(h) { return h > 0 && h !== 8; });
+    }) && [sat,sun,mon,tue,wed,thu,fri].some(function(h) {
+      return h > 0 && h !== 8 && Math.abs(h - 8.5) > 0.001 && h !== 9;
+    });
 
     // If any half-day variance exists, also flag the activity cell
     var hasHalfDayVar = halfDayVarianceCount > 0;
