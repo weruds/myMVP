@@ -4373,7 +4373,9 @@ function handleAuthState(user) {
       var bootstrap = INITIAL_ADMIN_PROFILES[user.uid]
         || (user.email && PENDING_EMAIL_PROFILES[user.email.toLowerCase()]);
       if (bootstrap) {
-        return profileRef.set(bootstrap).then(function() { return profileRef.get(); });
+        // Always include email so Role Maintenance can display it
+        var doc = Object.assign({ email: user.email || '' }, bootstrap);
+        return profileRef.set(doc).then(function() { return profileRef.get(); });
       }
       // 2. Check pendingRoles collection (set via Role Maintenance page)
       if (user.email) {
@@ -4381,7 +4383,7 @@ function handleAuthState(user) {
           .then(function(pending) {
             if (pending.exists) {
               var data = pending.data();
-              return profileRef.set({ role: data.role, mustChangePassword: !!data.mustChangePassword, talentId: '' })
+              return profileRef.set({ role: data.role, mustChangePassword: !!data.mustChangePassword, talentId: '', email: user.email || '' })
                 .then(function() {
                   return _fbDb.collection('pendingRoles').doc(user.email.toLowerCase()).delete();
                 })
@@ -5121,11 +5123,12 @@ async function loadRoleMaintenance() {
     ]);
     var usersSnap = results[0], mlSnap = results[1];
 
-    // Build email → masterlist lookup
-    var mlByEmail = {};
+    // Build email → masterlist lookup AND talentId → masterlist lookup
+    var mlByEmail = {}, mlBySerial = {};
     mlSnap.forEach(function(d) {
       var e = d.data();
-      if (e.email) mlByEmail[e.email.toLowerCase()] = e;
+      if (e.email)       mlByEmail[e.email.toLowerCase()] = e;
+      if (e.ibmSerialNo) mlBySerial[e.ibmSerialNo.toUpperCase()] = e;
     });
 
     _roleRecords = [];
@@ -5133,10 +5136,13 @@ async function loadRoleMaintenance() {
       var u = d.data();
       var role = u.role || 'user';
       if (role === 'user') return;   // only show admin / audit rows
-      var ml = mlByEmail[(u.email || '').toLowerCase()] || {};
+      // Cross-reference masterlist by email first, then by talentId/ibmSerialNo
+      var ml = mlByEmail[(u.email || '').toLowerCase()]
+            || mlBySerial[(u.talentId || '').toUpperCase()]
+            || {};
       _roleRecords.push({
         uid:         d.id,
-        email:       u.email || '',
+        email:       u.email || ml.email || '',
         role:        role,
         ibmSerialNo: ml.ibmSerialNo || u.talentId || '',
         name:        ml.name || ''
