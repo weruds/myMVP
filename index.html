@@ -3150,13 +3150,10 @@
   .ilc-day-inner    { display: flex; flex-direction: column; align-items: center; gap: 1px; }
   /* Subtle amber tint on the cell when two activities share the day */
   .ilc-table td.ilc-half-day { background: rgba(245,158,11,0.07) !important; }
-  /* ½ indicator badge */
-  .ilc-half-badge {
-    display: inline-block; font-size: 9px; font-weight: 800; line-height: 1;
-    background: rgba(245,158,11,0.18); color: #b45309;
-    border-radius: 3px; padding: 0 3px; margin-bottom: 1px;
-    letter-spacing: 0.2px;
-  }
+  /* Split display: each row shows hours + activity tag */
+  .ilc-day-split    { gap: 2px; }
+  .ilc-split-row    { display: flex; align-items: center; gap: 3px; justify-content: center; }
+  .ilc-split-hrs    { font-size: 11px; font-weight: 700; color: var(--text); min-width: 18px; text-align: right; }
 
   /* ─── STATUS PILLS ─── */
   .pill-active   { background: rgba(5,150,105,0.12); color: var(--success); border: 1px solid rgba(5,150,105,0.25); padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
@@ -5783,21 +5780,35 @@ function _renderMonthlyAtt() {
     if (val === 0) return '<td class="' + cls + '">—</td>';
     var otCls = isWeekend ? ' ilc-ot-we' : (val > 9 ? ' ilc-ot' : '');
 
-    // Normalise to array
-    var codes = Array.isArray(actCode) ? actCode : (actCode ? [actCode] : []);
-    var isHalfDay = codes.length > 1;
+    // Normalise to array — support both new {code,hrs} objects and legacy strings
+    var raw = Array.isArray(actCode) ? actCode : (actCode ? [actCode] : []);
+    var entries = raw.map(function(c) {
+      if (c && typeof c === 'object') return { code: (c.code || '').trim().toUpperCase(), hrs: c.hrs || 0 };
+      return { code: (c || '').trim().toUpperCase(), hrs: null };
+    });
+    var isHalfDay = entries.length > 1;
 
-    var tagHtml = codes.map(function(c) {
-      var code   = c.trim().toUpperCase();
-      var tagCls = ACT_TAG_CLS[code] || 'misc';
-      return '<span class="ilc-day-tag ilc-day-tag-' + tagCls + '">' + escapeHtml(code) + '</span>';
-    }).join('');
+    var inner;
+    if (isHalfDay) {
+      // Show each activity's hours + tag stacked
+      inner = '<div class="ilc-day-inner ilc-day-split">' +
+        entries.map(function(e) {
+          var tagCls = ACT_TAG_CLS[e.code] || 'misc';
+          var hrsLabel = e.hrs !== null ? e.hrs : '';
+          return '<div class="ilc-split-row">' +
+            (hrsLabel !== '' ? '<span class="ilc-split-hrs">' + hrsLabel + '</span>' : '') +
+            '<span class="ilc-day-tag ilc-day-tag-' + tagCls + '">' + escapeHtml(e.code) + '</span>' +
+            '</div>';
+        }).join('') +
+        '</div>';
+    } else {
+      var tagHtml = entries.map(function(e) {
+        var tagCls = ACT_TAG_CLS[e.code] || 'misc';
+        return '<span class="ilc-day-tag ilc-day-tag-' + tagCls + '">' + escapeHtml(e.code) + '</span>';
+      }).join('');
+      inner = '<div class="ilc-day-inner">' + val + tagHtml + '</div>';
+    }
 
-    var halfBadge = isHalfDay
-      ? '<span class="ilc-half-badge" title="Half-day leave">½</span>'
-      : '';
-
-    var inner = '<div class="ilc-day-inner">' + val + halfBadge + tagHtml + '</div>';
     return '<td class="' + cls + otCls + (isHalfDay ? ' ilc-half-day' : '') + '" style="vertical-align:middle;text-align:center;">' + inner + '</td>';
   }
 
@@ -6673,7 +6684,7 @@ function _pivotIlcRows(rows) {
         year:        row.year      || '',
         saturday: 0, sunday: 0,
         monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0,
-        activityByDay: {},   // dayKey → label for days that have a special activity
+        activityByDay: {},   // dayKey → [{ code, hrs }] — per-activity hours for the day
         activities:   [],
         vlCount: 0,
         slCount: 0,
@@ -6685,16 +6696,17 @@ function _pivotIlcRows(rows) {
     var actRaw = (row.activity || '').trim();
     var actLbl = _normaliseActivity(actRaw);
 
-    // Sum hours per day — and tag the day with ALL distinct activity labels
+    // Sum hours per day — store per-activity hours for split display
     DAY_KEYS.forEach(function(dk) {
       var hrs = parseFloat(row[dk] || 0) || 0;
       agg[dk] += hrs;
-      // Accumulate distinct activity labels for this day (supports half-day combos)
       if (hrs > 0 && actLbl) {
         if (!agg.activityByDay[dk]) {
-          agg.activityByDay[dk] = [actLbl];
-        } else if (agg.activityByDay[dk].indexOf(actLbl) === -1) {
-          agg.activityByDay[dk].push(actLbl);
+          agg.activityByDay[dk] = [{ code: actLbl, hrs: hrs }];
+        } else {
+          var existing = agg.activityByDay[dk].find(function(e) { return e.code === actLbl; });
+          if (existing) { existing.hrs += hrs; }
+          else          { agg.activityByDay[dk].push({ code: actLbl, hrs: hrs }); }
         }
       }
     });
