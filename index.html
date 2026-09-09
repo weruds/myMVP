@@ -3697,6 +3697,7 @@
           <button class="btn btn-primary btn-sm" onclick="detectWfhVariances()">🔍 Detect Variances</button>
           <button class="btn btn-danger btn-sm"  onclick="clearWfhVariances()">🗑 Clear Variances</button>
           <button class="btn btn-ghost btn-sm"   onclick="notifyWfhVariances()">📧 Notify Employees</button>
+          <button class="btn btn-ghost btn-sm"   onclick="loadWfhVariance(true)">↻ Refresh</button>
         </div>
       </div>
       <div class="page-toolbar">
@@ -3741,6 +3742,7 @@
           <button class="btn btn-primary btn-sm" onclick="detectIlcVariances()">🔍 Detect Variances</button>
           <button class="btn btn-danger btn-sm"  onclick="clearIlcVariances()">🗑 Clear Variances</button>
           <button class="btn btn-ghost btn-sm"   onclick="notifyIlcVariances()">📧 Notify Employees</button>
+          <button class="btn btn-ghost btn-sm"   onclick="loadIlcVariance(true)">↻ Refresh</button>
         </div>
       </div>
       <div class="page-toolbar">
@@ -7602,35 +7604,36 @@ async function detectWfhVariances() {
       });
       var weeklyOnsiteCount = weekRecsDisp.filter(function(x) { return x.status === 'Office'; }).length;
 
-      var docRef = _fbDb.collection('wfhVariances').doc();
-      batch.set(docRef, {
-        ibmSerialNo:       r.ibmSerialNo || '',
-        name:              r.name        || '',
-        email:             r.email       || '',
-        wfhDay1:           wfh.day1,
-        wfhDay2:           wfh.day2,
-        date:              dateStr,
-        mondayStatus:      status,
-        mondayDuration:    r.duration || '',
-        weeklyOnsiteCount: weeklyOnsiteCount,
-        variance:          varType,
-        reason:            reason,
-        month:             r.month || month,
-        year:              r.year  || year,
-        detectedAt:        ts
-      });
-      batchCount++;
-
-      // Firestore batches are limited to 500 operations — flush and start new batch
-      if (batchCount >= BATCH_LIMIT) {
-        await batch.commit();
-        batch = _fbDb.batch();
-        batchCount = 0;
+      // Only write records with an actual variance
+      if (varType !== 'No Variance') {
+        var docRef = _fbDb.collection('wfhVariances').doc();
+        batch.set(docRef, {
+          ibmSerialNo:       r.ibmSerialNo || '',
+          name:              r.name        || '',
+          email:             r.email       || '',
+          wfhDay1:           wfh.day1,
+          wfhDay2:           wfh.day2,
+          date:              dateStr,
+          mondayStatus:      status,
+          mondayDuration:    r.duration || '',
+          weeklyOnsiteCount: weeklyOnsiteCount,
+          variance:          varType,
+          reason:            reason,
+          month:             r.month || month,
+          year:              r.year  || year,
+          detectedAt:        ts
+        });
+        batchCount++;
+        if (batchCount >= BATCH_LIMIT) {
+          await batch.commit();
+          batch = _fbDb.batch();
+          batchCount = 0;
+        }
       }
     }
     if (batchCount > 0) await batch.commit();
 
-    showToast('Variance detection complete.', '✅');
+    showToast('WFH variance detection complete — ' + batchCount + ' variance(s) written.', '✅');
     loadWfhVariance(true);
   } catch(err) {
     showToast('Error detecting variances: ' + (err.message || err), '❌');
@@ -7895,47 +7898,90 @@ async function detectIlcVariances() {
       });
     }
 
+    // ILC records are weekly (one row per employee per weekending).
+    // We need to check each weekday (Mon–Fri) against the matching Monday.com record.
+    var ILC_WEEKDAYS = [
+      { key: 'monday',    offset: -4 },
+      { key: 'tuesday',   offset: -3 },
+      { key: 'wednesday', offset: -2 },
+      { key: 'thursday',  offset: -1 },
+      { key: 'friday',    offset:  0 }
+    ];
+
     for (var i = 0; i < ilcRecords.length; i++) {
       var r = ilcRecords[i];
-      var mondayDate = _mondayDateFromWeekending(r.weekending || '');
-      if (!mondayDate) continue;
+      var we = r.weekending || '';
+      if (!we) continue;
 
-      var mondayRec = mondayMap[(r.ibmSerialNo || '') + '_' + mondayDate] || null;
-      var result;
-      if (!mondayRec) {
-        result = { variance: 'Yes', reason: 'No Monday.com record found for ' + mondayDate };
-      } else {
-        result = _applyIlcVarianceRule(r, mondayRec);
-      }
+      // Parse the weekending (Friday) date
+      var fridayD = new Date(we + 'T00:00:00Z');
+      if (isNaN(fridayD.getTime())) { fridayD = new Date(we); }
+      if (isNaN(fridayD.getTime())) continue;
 
-      var docRef = _fbDb.collection('ilcMondayVariances').doc();
-      batch.set(docRef, {
-        ibmSerialNo:    r.ibmSerialNo   || '',
-        name:           r.name          || '',
-        email:          r.email         || '',
-        weekending:     r.weekending    || '',
-        mondayDate:     mondayDate,
-        ilcActivity:    r.activity      || '',
-        ilcClocking:    parseFloat(r.monday || 0) || 0,
-        mondayStatus:   mondayRec ? (mondayRec.status   || '') : '',
-        mondayDuration: mondayRec ? (mondayRec.duration || '') : '',
-        variance:       result.variance,
-        varianceReason: result.reason,
-        month:          r.month || month,
-        year:           r.year  || year,
-        detectedAt:     ts
-      });
-      batchCount++;
+      var serial = r.ibmSerialNo || '';
 
-      if (batchCount >= BATCH_LIMIT) {
-        await batch.commit();
-        batch = _fbDb.batch();
-        batchCount = 0;
+      for (var d = 0; d < ILC_WEEKDAYS.length; d++) {
+        var dayInfo  = ILC_WEEKDAYS[d];
+        var dayKey   = dayInfo.key;
+        var dayHrs   = parseFloat(r[dayKey] || 0) || 0;
+        if (dayHrs === 0) continue;  // no clocking this day — skip
+
+        // Compute the actual calendar date for this weekday
+        var dayDate = new Date(fridayD);
+        dayDate.setUTCDate(fridayD.getUTCDate() + dayInfo.offset);
+        var dayDateStr = dayDate.toISOString().substring(0, 10);
+
+        // Build a pseudo-ILC record for just this day so _applyIlcVarianceRule can work
+        var dayIlcRec = Object.assign({}, r);
+        // Override the per-day hours so the rule engine sees this day's value as "monday"
+        dayIlcRec.monday = dayHrs;
+        // Use activityByDay for this specific day if available
+        if (r.activityByDay && r.activityByDay[dayKey]) {
+          dayIlcRec.activityByDay = { monday: r.activityByDay[dayKey] };
+        } else {
+          dayIlcRec.activityByDay = {};
+        }
+
+        var mondayRec = mondayMap[serial + '_' + dayDateStr] || null;
+        var result;
+        if (!mondayRec) {
+          result = { variance: 'Yes', reason: 'No Monday.com record found for ' + dayDateStr };
+        } else {
+          result = _applyIlcVarianceRule(dayIlcRec, mondayRec);
+        }
+
+        // Only write actual variances
+        if (result.variance !== 'Yes') continue;
+
+        var docRef = _fbDb.collection('ilcMondayVariances').doc();
+        batch.set(docRef, {
+          ibmSerialNo:    serial,
+          name:           r.name          || '',
+          email:          r.email         || '',
+          weekending:     we,
+          date:           dayDateStr,
+          dayOfWeek:      dayKey,
+          ilcActivity:    r.activity      || '',
+          ilcClocking:    dayHrs,
+          mondayStatus:   mondayRec ? (mondayRec.status   || '') : '',
+          mondayDuration: mondayRec ? (mondayRec.duration || '') : '',
+          variance:       result.variance,
+          varianceReason: result.reason,
+          month:          r.month || month,
+          year:           r.year  || year,
+          detectedAt:     ts
+        });
+        batchCount++;
+        if (batchCount >= BATCH_LIMIT) {
+          await batch.commit();
+          batch = _fbDb.batch();
+          batchCount = 0;
+        }
       }
     }
     if (batchCount > 0) await batch.commit();
 
-    showToast('ILC variance detection complete.', '✅');
+    showToast('ILC variance detection complete — ' + batchCount + ' variance(s) written.', '✅');
     loadIlcVariance(true);
   } catch(err) {
     showToast('Error detecting ILC variances: ' + (err.message || err), '❌');
