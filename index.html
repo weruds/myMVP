@@ -5870,7 +5870,10 @@ function handleWfhUpload(event) {
             r.ibmSerialNo = byEmail[emailKey] || byName[nameKey] || '';
           }
         });
-        return rowsToWrite;
+        // Exclude rows where IBM Serial No, Email AND Name are all blank
+        return rowsToWrite.filter(function(r) {
+          return (r.ibmSerialNo || '').trim() || (r.email || '').trim() || (r.name || '').trim();
+        });
       },
       onSuccess: function() { loadWfhSchedule(); }
     };
