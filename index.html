@@ -7518,6 +7518,7 @@ async function detectWfhVariances() {
   var month = (document.getElementById('wfh-var-month') || {}).value || '';
 
   showToast('Detecting variances…', '🔍');
+  console.log('[WFH Detect] start — year:', year, 'month:', month);
 
   try {
     var results = await Promise.all([
@@ -7527,20 +7528,27 @@ async function detectWfhVariances() {
 
     var mondaySnap = results[0];
     var wfhSnap    = results[1];
+    console.log('[WFH Detect] mondayAttendance docs:', mondaySnap.size, '| wfhSchedule docs:', wfhSnap.size);
 
     // Build WFH lookup: ibmSerialNo → { day1, day2 }
     var wfhMap = {};
     wfhSnap.forEach(function(d) {
       var r = d.data();
+      console.log('[WFH Detect] wfhSchedule row — serial:', r.ibmSerialNo, 'days:', r.daysSelection);
       if (r.ibmSerialNo) {
         wfhMap[r.ibmSerialNo] = _parseDaysSelection(r.daysSelection || '');
       }
     });
+    console.log('[WFH Detect] wfhMap keys:', Object.keys(wfhMap).length);
 
-    // Build in-memory Monday records array for weekly count calculations
-    // Build in-memory Monday records array — filter by year/month in-memory if selected
+    // Build in-memory Monday records — filter by year/month in-memory if selected
     var mondayRecords = [];
     mondaySnap.forEach(function(d) { mondayRecords.push(Object.assign({ _id: d.id }, d.data())); });
+    console.log('[WFH Detect] total Monday records before filter:', mondayRecords.length);
+    if (mondayRecords.length > 0) {
+      var sampleMon = mondayRecords[0];
+      console.log('[WFH Detect] sample Monday record:', JSON.stringify({ ibmSerialNo: sampleMon.ibmSerialNo, date: sampleMon.date, status: sampleMon.status, year: sampleMon.year, month: sampleMon.month }));
+    }
     if (year || month) {
       mondayRecords = mondayRecords.filter(function(r) {
         var ry = String(r.year || (r.date || '').substring(0,4));
@@ -7549,6 +7557,7 @@ async function detectWfhVariances() {
         if (month && rm !== month)  return false;
         return true;
       });
+      console.log('[WFH Detect] Monday records after year/month filter:', mondayRecords.length);
     }
 
     var ts = firebase.firestore.FieldValue.serverTimestamp();
@@ -7871,6 +7880,7 @@ async function detectIlcVariances() {
 
     var ilcSnap    = results[0];
     var mondaySnap = results[1];
+    console.log('[ILC Detect] monthlyAttendance docs:', ilcSnap.size, '| mondayAttendance docs:', mondaySnap.size);
 
     // Build Monday lookup map: "ibmSerialNo_YYYY-MM-DD" → mondayRecord (all records)
     var mondayMap = {};
@@ -7879,6 +7889,10 @@ async function detectIlcVariances() {
       var key = (r.ibmSerialNo || '') + '_' + (r.date || '');
       mondayMap[key] = r;
     });
+    console.log('[ILC Detect] mondayMap keys:', Object.keys(mondayMap).length);
+    // Log a sample Monday key so we can verify the format
+    var sampleMonKey = Object.keys(mondayMap)[0];
+    if (sampleMonKey) console.log('[ILC Detect] sample Monday map key:', sampleMonKey);
 
     var ts = firebase.firestore.FieldValue.serverTimestamp();
     var batch = _fbDb.batch();
@@ -7888,6 +7902,11 @@ async function detectIlcVariances() {
     // Fetch ILC records and filter in-memory by year/month if selected
     var ilcRecords = [];
     ilcSnap.forEach(function(d) { ilcRecords.push(Object.assign({ _id: d.id }, d.data())); });
+    console.log('[ILC Detect] total ILC records before filter:', ilcRecords.length);
+    if (ilcRecords.length > 0) {
+      var sampleIlc = ilcRecords[0];
+      console.log('[ILC Detect] sample ILC record:', JSON.stringify({ ibmSerialNo: sampleIlc.ibmSerialNo, weekending: sampleIlc.weekending, activity: sampleIlc.activity, monday: sampleIlc.monday, year: sampleIlc.year, month: sampleIlc.month }));
+    }
     if (year || month) {
       ilcRecords = ilcRecords.filter(function(r) {
         var ry = String(r.year || (r.weekending || '').substring(0,4));
@@ -7896,6 +7915,7 @@ async function detectIlcVariances() {
         if (month && rm !== month) return false;
         return true;
       });
+      console.log('[ILC Detect] ILC records after year/month filter:', ilcRecords.length);
     }
 
     // ILC records are weekly (one row per employee per weekending).
@@ -7930,6 +7950,8 @@ async function detectIlcVariances() {
         var dayDate = new Date(fridayD);
         dayDate.setUTCDate(fridayD.getUTCDate() + dayInfo.offset);
         var dayDateStr = dayDate.toISOString().substring(0, 10);
+        var lookupKey = serial + '_' + dayDateStr;
+        console.log('[ILC Detect] checking', dayKey, '| serial:', serial, '| date:', dayDateStr, '| hrs:', dayHrs, '| Monday hit:', !!mondayMap[lookupKey]);
 
         // Build a pseudo-ILC record for just this day so _applyIlcVarianceRule can work
         var dayIlcRec = Object.assign({}, r);
