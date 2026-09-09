@@ -7518,11 +7518,8 @@ async function detectWfhVariances() {
   showToast('Detecting variances…', '🔍');
 
   try {
-    var mondayQuery = _fbDb.collection('mondayAttendance');
-    if (year)  mondayQuery = mondayQuery.where('year',  '==', year);
-    if (month) mondayQuery = mondayQuery.where('month', '==', month);
     var results = await Promise.all([
-      mondayQuery.get(),
+      _fbDb.collection('mondayAttendance').get(),
       _fbDb.collection('wfhSchedule').get()
     ]);
 
@@ -7539,8 +7536,18 @@ async function detectWfhVariances() {
     });
 
     // Build in-memory Monday records array for weekly count calculations
+    // Build in-memory Monday records array — filter by year/month in-memory if selected
     var mondayRecords = [];
     mondaySnap.forEach(function(d) { mondayRecords.push(Object.assign({ _id: d.id }, d.data())); });
+    if (year || month) {
+      mondayRecords = mondayRecords.filter(function(r) {
+        var ry = String(r.year || (r.date || '').substring(0,4));
+        var rm = r.month || '';
+        if (year  && ry !== year)   return false;
+        if (month && rm !== month)  return false;
+        return true;
+      });
+    }
 
     var ts = firebase.firestore.FieldValue.serverTimestamp();
     var batch = _fbDb.batch();
@@ -7626,8 +7633,8 @@ async function detectWfhVariances() {
     showToast('Variance detection complete.', '✅');
     loadWfhVariance(true);
   } catch(err) {
-    showToast('Error detecting variances.', '❌');
-    console.error(err);
+    showToast('Error detecting variances: ' + (err.message || err), '❌');
+    console.error('detectWfhVariances:', err);
   }
 }
 
@@ -7854,19 +7861,15 @@ async function detectIlcVariances() {
   showToast('Detecting ILC variances…', '🔍');
 
   try {
-    var ilcQuery    = _fbDb.collection('monthlyAttendance');
-    var mondayQuery = _fbDb.collection('mondayAttendance');
-    if (year)  { ilcQuery = ilcQuery.where('year',  '==', year);  mondayQuery = mondayQuery.where('year',  '==', year); }
-    if (month) { ilcQuery = ilcQuery.where('month', '==', month); mondayQuery = mondayQuery.where('month', '==', month); }
     var results = await Promise.all([
-      ilcQuery.get(),
-      mondayQuery.get()
+      _fbDb.collection('monthlyAttendance').get(),
+      _fbDb.collection('mondayAttendance').get()
     ]);
 
     var ilcSnap    = results[0];
     var mondaySnap = results[1];
 
-    // Build Monday lookup map: "ibmSerialNo_YYYY-MM-DD" → mondayRecord
+    // Build Monday lookup map: "ibmSerialNo_YYYY-MM-DD" → mondayRecord (all records)
     var mondayMap = {};
     mondaySnap.forEach(function(d) {
       var r = d.data();
@@ -7879,8 +7882,18 @@ async function detectIlcVariances() {
     var batchCount = 0;
     var BATCH_LIMIT = 490;
 
+    // Fetch ILC records and filter in-memory by year/month if selected
     var ilcRecords = [];
     ilcSnap.forEach(function(d) { ilcRecords.push(Object.assign({ _id: d.id }, d.data())); });
+    if (year || month) {
+      ilcRecords = ilcRecords.filter(function(r) {
+        var ry = String(r.year || (r.weekending || '').substring(0,4));
+        var rm = r.month || '';
+        if (year  && ry !== year)  return false;
+        if (month && rm !== month) return false;
+        return true;
+      });
+    }
 
     for (var i = 0; i < ilcRecords.length; i++) {
       var r = ilcRecords[i];
@@ -7925,8 +7938,8 @@ async function detectIlcVariances() {
     showToast('ILC variance detection complete.', '✅');
     loadIlcVariance(true);
   } catch(err) {
-    showToast('Error detecting ILC variances.', '❌');
-    console.error(err);
+    showToast('Error detecting ILC variances: ' + (err.message || err), '❌');
+    console.error('detectIlcVariances:', err);
   }
 }
 
