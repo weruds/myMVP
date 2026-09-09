@@ -3678,9 +3678,14 @@
     <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px;">
       <div>
         <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">EMPLOYEE</label>
-        <select id="role-modal-employee" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:8px 10px;outline:none;">
+        <select id="role-modal-employee" onchange="onRoleEmployeeChange(this)" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:8px 10px;outline:none;">
           <option value="">— Select employee —</option>
         </select>
+      </div>
+      <div id="role-modal-email-row" style="display:none;">
+        <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">IBM EMAIL <span style="color:var(--danger);">*</span></label>
+        <input type="email" id="role-modal-email-input" placeholder="e.g. firstname.lastname@ibm.com"
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:8px 10px;outline:none;box-sizing:border-box;" />
       </div>
       <div>
         <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">ROLE</label>
@@ -5199,7 +5204,10 @@ async function openAddRoleModal() {
   var emps = [];
   snap.forEach(function(d) {
     var e = d.data();
-    if (e.email && !assignedEmails.has(e.email.toLowerCase())) emps.push(e);
+    // Include all active employees; exclude only those already assigned by email
+    if (!e.name && !e.email) return;
+    if (e.email && assignedEmails.has(e.email.toLowerCase())) return;
+    emps.push(e);
   });
   emps.sort(function(a, b) {
     var nA = _lastNameKey(a.name), nB = _lastNameKey(b.name);
@@ -5208,10 +5216,16 @@ async function openAddRoleModal() {
   var sel = document.getElementById('role-modal-employee');
   sel.innerHTML = '<option value="">— Select employee —</option>' +
     emps.map(function(e) {
-      return '<option value="' + escapeHtml(e.email) + '">' +
-        escapeHtml(e.name || e.email) + ' (' + escapeHtml(e.email) + ')</option>';
+      // value = email if present, else ibmSerialNo prefixed so we know it's a serial
+      var val = e.email || ('__serial__' + (e.ibmSerialNo || e.name));
+      var label = e.email
+        ? escapeHtml(e.name || e.email) + ' (' + escapeHtml(e.email) + ')'
+        : escapeHtml(e.name || e.ibmSerialNo) + ' — no email on file';
+      return '<option value="' + escapeHtml(val) + '">' + label + '</option>';
     }).join('');
   sel.disabled = false;
+  document.getElementById('role-modal-email-row').style.display = 'none';
+  document.getElementById('role-modal-email-input').value = '';
   document.getElementById('role-modal-overlay').classList.add('open');
 }
 
@@ -5228,6 +5242,19 @@ function openEditRoleModal(uid, currentRole) {
   document.getElementById('role-modal-overlay').classList.add('open');
 }
 
+function onRoleEmployeeChange(sel) {
+  var emailRow = document.getElementById('role-modal-email-row');
+  var emailInput = document.getElementById('role-modal-email-input');
+  if (sel.value.startsWith('__serial__')) {
+    emailRow.style.display = 'block';
+    emailInput.value = '';
+    emailInput.focus();
+  } else {
+    emailRow.style.display = 'none';
+    emailInput.value = '';
+  }
+}
+
 function closeRoleModal() {
   document.getElementById('role-modal-overlay').classList.remove('open');
 }
@@ -5239,8 +5266,14 @@ async function saveRole() {
   var role  = document.getElementById('role-modal-role').value;
   var editUid = btn.dataset.uid;
 
+  // If a serial-keyed employee was selected, use the manually entered email instead
+  if (email.startsWith('__serial__')) {
+    email = document.getElementById('role-modal-email-input').value.trim();
+  }
+
   errEl.textContent = '';
   if (!email) { errEl.textContent = 'Please select an employee.'; return; }
+  if (!document.getElementById('role-modal-employee').value) { errEl.textContent = 'Please select an employee.'; return; }
 
   btn.disabled = true;
   try {
@@ -5936,11 +5969,14 @@ async function _enrichMondayFromMasterlist(rows) {
 
 // ──────────────────────────────────────────────
 // ── MASTER SYNC
-// Fast path:
-//   1. Read masterlist from cache (IndexedDB — no network round-trip).
-//   2. Patch in-memory attendance arrays instantly + re-render the open page.
-//   3. Fire-and-forget Firestore writes in the background (do NOT await them).
-//      The UI is unblocked immediately; Firestore catches up on its own.
+// Strategy: build a unified "truth" per employee by merging data from
+// ALL three sources (ILC, Monday, Masterlist), then repair each source
+// with whatever the others have that it's missing or has wrong.
+//
+// Identity key: ibmSerialNo (primary), then normalised name (fallback).
+// Name repair:  the "best" name wins — comma-formatted (LAST, FIRST) beats
+//               plain, longer beats shorter, ILC beats Monday beats Masterlist.
+// Email repair: the source that has BOTH serial AND email is authoritative.
 // ──────────────────────────────────────────────
 async function runMasterSync() {
   if (!_fbDb) return;
@@ -5949,28 +5985,97 @@ async function runMasterSync() {
   btn.querySelector('span').textContent = '⏳ Syncing…';
 
   try {
-    // ── 1. Read masterlist — served from IndexedDB cache, no network wait ─────
+    // ── 1. Read masterlist — cache first, fall back to server ─────────────────
     var mlSnap = await _fbDb.collection('masterlist').get({ source: 'cache' }).catch(function() {
-      // Cache miss (first run or cache cleared) — fall back to server
       return _fbDb.collection('masterlist').get();
     });
+    var mlDocs = [];
+    mlSnap.forEach(function(d) { mlDocs.push({ id: d.id, data: d.data() }); });
 
-    // ── 2. Build lookup maps ──────────────────────────────────────────────────
-    var bySerial   = {};
-    var byNormName = {};
-    var mlDocs     = [];
+    // ── 2. Build unified employee map keyed by ibmSerialNo ────────────────────
+    // Each entry: { serial, name, accountId, email }
+    // We merge from all 3 sources; best value wins per field.
+    var empMap = {};   // ibmSerialNo → unified truth object
 
-    mlSnap.forEach(function(d) {
-      var e  = d.data();
-      var sn = (e.ibmSerialNo || '').trim();
-      var nn = _normaliseName(e.name || '');
-      var rec = { serial: sn, name: nn, accountId: (e.accountId || '').trim(), email: (e.email || '').trim().toLowerCase() };
-      if (sn) bySerial[sn]   = rec;
-      if (nn) byNormName[nn] = rec;
-      mlDocs.push({ id: d.id, data: e });
+    // Helper: pick the "best" name between two candidates
+    function _bestName(a, b) {
+      var na = _normaliseName(a || ''), nb = _normaliseName(b || '');
+      if (!na) return nb;
+      if (!nb) return na;
+      var ac = na.indexOf(',') !== -1, bc = nb.indexOf(',') !== -1;
+      if (ac && !bc) return na;   // comma format beats plain
+      if (!ac && bc) return nb;
+      return na.length >= nb.length ? na : nb;  // longer wins
+    }
+
+    // Helper: register a record into empMap
+    // priority: 1=ILC (highest), 2=Monday, 3=Masterlist (lowest)
+    function _mergeInto(r, priority) {
+      var sn    = (r.ibmSerialNo || '').trim();
+      var nn    = _normaliseName(r.name || '');
+      var email = (r.email       || '').trim().toLowerCase();
+      var acct  = (r.accountId   || '').trim();
+
+      // Find or create entry — match by serial first, then by normalised name
+      var key = null;
+      if (sn) {
+        key = sn;
+      } else {
+        // No serial on this record — see if we already saw this name
+        if (nn) {
+          // Scan existing keys for a name match
+          Object.keys(empMap).forEach(function(k) {
+            if (empMap[k].name === nn) key = k;
+          });
+        }
+      }
+      if (!key) {
+        // Can't resolve — skip (no serial, no name match)
+        if (!nn && !sn) return;
+        // Use name as a temporary key if no serial
+        key = sn || ('__name__' + nn);
+      }
+
+      if (!empMap[key]) {
+        empMap[key] = { serial: sn, name: nn, email: email, accountId: acct, _priority: priority };
+        return;
+      }
+
+      var e = empMap[key];
+      // Serial: fill if missing
+      if (!e.serial && sn) e.serial = sn;
+      // Name: always take the best
+      e.name = _bestName(e.name, nn);
+      // Email: source with BOTH serial AND email wins; otherwise first-come higher-priority wins
+      var newHasBoth = !!(sn && email);
+      var oldHasBoth = !!(e.serial && e.email);
+      if (newHasBoth && !oldHasBoth) {
+        e.email = email;          // new source has serial+email — authoritative
+      } else if (!oldHasBoth && !newHasBoth && !e.email && email) {
+        e.email = email;          // neither has both — take first available
+      }
+      // AccountId: fill if missing; higher-priority (lower number) overwrites
+      if (!e.accountId && acct) e.accountId = acct;
+      else if (acct && priority < e._priority) e.accountId = acct;
+      // Track best priority seen
+      if (priority < e._priority) e._priority = priority;
+    }
+
+    // Feed all three sources — ILC is most authoritative (1), then Monday (2), then Masterlist (3)
+    _monthlyAttRecords.forEach(function(r) { _mergeInto(r, 1); });
+    _mondayAttRecords.forEach(function(r)  { _mergeInto(r, 2); });
+    mlDocs.forEach(function(m)             { _mergeInto(m.data, 3); });
+
+    // ── 3. Build fast-lookup from unified map (by serial AND by name) ─────────
+    var bySerial   = {};   // serial → truth
+    var byNormName = {};   // normalised name → truth
+    Object.keys(empMap).forEach(function(k) {
+      var t = empMap[k];
+      if (t.serial) bySerial[t.serial] = t;
+      if (t.name)   byNormName[t.name] = t;
     });
 
-    // ── 3. Diff helper ────────────────────────────────────────────────────────
+    // ── 4. Diff helper — returns patch object or null ─────────────────────────
     function _diffRow(r) {
       var sn    = (r.ibmSerialNo || '').trim();
       var nn    = _normaliseName(r.name || '');
@@ -5979,30 +6084,28 @@ async function runMasterSync() {
       var truth = (sn && bySerial[sn]) || (nn && byNormName[nn]) || null;
       if (!truth) return null;
       var patch = {};
-      if (!sn    && truth.serial)    patch.ibmSerialNo = truth.serial;
-      if (!acct  && truth.accountId) patch.accountId   = truth.accountId;
-      if (!email && truth.email)     patch.email        = truth.email;
-      if (truth.name && truth.name !== nn) {
-        var sc = nn.indexOf(',') !== -1, tc = truth.name.indexOf(',') !== -1;
-        if (!nn || (tc && !sc) || truth.name.length > nn.length) patch.name = truth.name;
-      }
+      if (truth.serial    && sn    !== truth.serial)    patch.ibmSerialNo = truth.serial;
+      if (truth.accountId && acct  !== truth.accountId) patch.accountId   = truth.accountId;
+      if (truth.email     && email !== truth.email)     patch.email       = truth.email;
+      if (truth.name      && truth.name !== nn)         patch.name        = truth.name;
       return Object.keys(patch).length ? patch : null;
     }
 
     var ilcPatched = 0, monPatched = 0, mlPatched = 0, newMlCount = 0;
-    var attWrites = [];   // attendance writes — fire-and-forget
-    var mlWrites  = [];   // masterlist writes — awaited (small)
+    var attWrites = [];
+    var mlWrites  = [];
+    var ts = firebase.firestore.FieldValue.serverTimestamp();
 
-    // ── 4a. Patch in-memory ILC records instantly ─────────────────────────────
+    // ── 5a. Patch in-memory ILC records instantly ─────────────────────────────
     _monthlyAttRecords.forEach(function(r) {
       var patch = _diffRow(r);
       if (!patch) return;
-      Object.assign(r, patch);   // update in-memory immediately
+      Object.assign(r, patch);
       if (r._id) attWrites.push({ col: 'monthlyAttendance', id: r._id, patch: patch });
       ilcPatched++;
     });
 
-    // ── 4b. Patch in-memory Monday records instantly ──────────────────────────
+    // ── 5b. Patch in-memory Monday records instantly ──────────────────────────
     _mondayAttRecords.forEach(function(r) {
       var patch = _diffRow(r);
       if (!patch) return;
@@ -6011,27 +6114,23 @@ async function runMasterSync() {
       monPatched++;
     });
 
-    // ── 4c. Patch masterlist docs ─────────────────────────────────────────────
-    var ts = firebase.firestore.FieldValue.serverTimestamp();
+    // ── 5c. Patch masterlist docs ─────────────────────────────────────────────
     mlDocs.forEach(function(m) {
       var patch = _diffRow(m.data);
       if (patch) { mlWrites.push({ id: m.id, patch: patch }); mlPatched++; }
     });
 
-    // ── 4d. New masterlist entries for employees missing from it ──────────────
-    var seen = {};
-    function _maybeAddToMl(r) {
-      var sn = (r.ibmSerialNo || '').trim();
-      if (!sn || bySerial[sn] || seen[sn]) return;
-      seen[sn] = true;
+    // ── 5d. Add new masterlist entries for employees not yet in it ────────────
+    var mlSerials = new Set(mlDocs.map(function(m) { return (m.data.ibmSerialNo || '').trim(); }).filter(Boolean));
+    Object.keys(empMap).forEach(function(k) {
+      var t = empMap[k];
+      if (!t.serial || mlSerials.has(t.serial)) return;
       mlWrites.push({
         id: null, isSet: true,
-        patch: { ibmSerialNo: sn, name: _normaliseName(r.name || ''), accountId: (r.accountId || '').trim(), email: (r.email || '').trim().toLowerCase(), status: 'Active', updatedAt: ts }
+        patch: { ibmSerialNo: t.serial, name: t.name, accountId: t.accountId, email: t.email, status: 'Active', updatedAt: ts }
       });
       newMlCount++;
-    }
-    _monthlyAttRecords.forEach(_maybeAddToMl);
-    _mondayAttRecords.forEach(_maybeAddToMl);
+    });
 
     var totalChanges = ilcPatched + monPatched + mlPatched + newMlCount;
     if (!totalChanges) {
@@ -6041,11 +6140,11 @@ async function runMasterSync() {
       return;
     }
 
-    // ── 5. Re-render open attendance pages immediately (in-memory already patched)
+    // ── 6. Re-render open attendance pages immediately ────────────────────────
     if (document.getElementById('page-monthly-attendance').classList.contains('active')) _renderMonthlyAtt();
     if (document.getElementById('page-monday-attendance').classList.contains('active'))  _renderMondayAtt();
 
-    // ── 6. Await only masterlist writes (small — just employee count) ─────────
+    // ── 7. Await masterlist writes (small — just employee count) ──────────────
     if (mlWrites.length) {
       var BATCH = 490, cur = _fbDb.batch(), count = 0, batches = [];
       mlWrites.forEach(function(w) {
@@ -6057,8 +6156,7 @@ async function runMasterSync() {
       await Promise.all(batches.map(function(b) { return b.commit(); }));
     }
 
-    // ── 7. Fire-and-forget attendance writes in background ────────────────────
-    // These go to Firestore without blocking the UI.
+    // ── 8. Fire-and-forget attendance writes in background ────────────────────
     if (attWrites.length) {
       var BATCH2 = 490, cur2 = _fbDb.batch(), cnt2 = 0, batches2 = [];
       attWrites.forEach(function(w) {
@@ -6067,13 +6165,12 @@ async function runMasterSync() {
         if (++cnt2 >= BATCH2) { batches2.push(cur2); cur2 = _fbDb.batch(); cnt2 = 0; }
       });
       if (cnt2 > 0) batches2.push(cur2);
-      // Not awaited — runs in background, UI already updated
       Promise.all(batches2.map(function(b) { return b.commit(); })).catch(function(err) {
         console.warn('Master Sync background write error:', err);
       });
     }
 
-    // ── 8. Summary toast + refresh masterlist ────────────────────────────────
+    // ── 9. Summary toast + refresh masterlist ─────────────────────────────────
     var parts = [];
     if (ilcPatched > 0) parts.push(ilcPatched + ' ILC record'        + (ilcPatched  !== 1 ? 's' : '') + ' patched');
     if (monPatched > 0) parts.push(monPatched + ' Monday record'     + (monPatched  !== 1 ? 's' : '') + ' patched');
