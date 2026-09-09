@@ -3721,6 +3721,47 @@
   </div>
 </div>
 
+<!-- Edit Masterlist Employee modal -->
+<div class="admin-modal-overlay" id="edit-masterlist-overlay" onclick="if(event.target===this)closeEditMasterlistModal()">
+  <div class="admin-modal" onclick="event.stopPropagation()" style="width:400px;">
+    <div class="admin-modal-icon">✏️</div>
+    <div class="admin-modal-title">Edit Employee</div>
+    <div class="admin-modal-sub">Update this employee's masterlist record.</div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px;">
+      <div>
+        <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">NAME</label>
+        <input type="text" id="ml-edit-name" placeholder="LAST, FIRST MIDDLE"
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:8px 10px;outline:none;box-sizing:border-box;" />
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">IBM SERIAL NO.</label>
+        <input type="text" id="ml-edit-serial" placeholder="e.g. 1A2B3C"
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:8px 10px;outline:none;box-sizing:border-box;" />
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">EMAIL</label>
+        <input type="email" id="ml-edit-email" placeholder="e.g. firstname.lastname@ibm.com"
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:8px 10px;outline:none;box-sizing:border-box;" />
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">ACCOUNT ID</label>
+        <input type="text" id="ml-edit-accountid" placeholder="e.g. IBM-SEET"
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:8px 10px;outline:none;box-sizing:border-box;" />
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">SERVICE LINE</label>
+        <input type="text" id="ml-edit-serviceline" placeholder="e.g. Software Engineering"
+          style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:8px 10px;outline:none;box-sizing:border-box;" />
+      </div>
+    </div>
+    <div class="admin-error-msg" id="ml-edit-error"></div>
+    <div class="admin-modal-actions">
+      <button class="btn btn-ghost" onclick="closeEditMasterlistModal()">Cancel</button>
+      <button class="btn btn-primary" id="ml-edit-save-btn" onclick="saveMasterlistEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Upload Final Confirm modal (WFH + Attendance) -->
 <div class="admin-modal-overlay" id="upload-final-confirm-overlay" onclick="if(event.target===this)closeUploadFinalConfirm()">
   <div class="admin-modal" onclick="event.stopPropagation()">
@@ -5095,6 +5136,7 @@ function _renderMasterlist() {
       '<td><span class="tag tag-blue">' + escapeHtml(e.serviceLine || '') + '</span></td>' +
       '<td>' + statusPill + '</td>' +
       '<td style="white-space:nowrap;">' +
+        '<button class="btn btn-ghost btn-sm" onclick="openEditMasterlistModal(\'' + e._id + '\')" style="margin-right:4px;">✏️ Edit</button>' +
         '<button class="btn btn-ghost btn-sm" onclick="toggleMasterlistStatus(\'' + e._id + '\',\'' + escapeHtml(e.status||'Active') + '\')">' + (e.status === 'Active' ? 'Set Inactive' : 'Set Active') + '</button>' +
       '</td></tr>';
   });
@@ -5108,6 +5150,60 @@ async function toggleMasterlistStatus(docId, currentStatus) {
     showToast('Status updated to ' + newStatus + '.', '✅');
     loadMasterlist();
   } catch(err) { showToast('Failed to update status.'); }
+}
+
+function openEditMasterlistModal(docId) {
+  var rec = _masterlistRecords.find(function(r) { return r._id === docId; });
+  if (!rec) return;
+  document.getElementById('ml-edit-name').value        = rec.name        || '';
+  document.getElementById('ml-edit-serial').value      = rec.ibmSerialNo || '';
+  document.getElementById('ml-edit-email').value       = rec.email       || '';
+  document.getElementById('ml-edit-accountid').value   = rec.accountId   || '';
+  document.getElementById('ml-edit-serviceline').value = rec.serviceLine || '';
+  document.getElementById('ml-edit-error').textContent = '';
+  document.getElementById('ml-edit-save-btn').dataset.id = docId;
+  document.getElementById('edit-masterlist-overlay').classList.add('open');
+}
+
+function closeEditMasterlistModal() {
+  document.getElementById('edit-masterlist-overlay').classList.remove('open');
+}
+
+async function saveMasterlistEdit() {
+  var btn   = document.getElementById('ml-edit-save-btn');
+  var errEl = document.getElementById('ml-edit-error');
+  var docId = btn.dataset.id;
+  var name        = document.getElementById('ml-edit-name').value.trim();
+  var serial      = document.getElementById('ml-edit-serial').value.trim();
+  var email       = document.getElementById('ml-edit-email').value.trim().toLowerCase();
+  var accountId   = document.getElementById('ml-edit-accountid').value.trim();
+  var serviceLine = document.getElementById('ml-edit-serviceline').value.trim();
+
+  errEl.textContent = '';
+  if (!name && !serial) { errEl.textContent = 'Name or IBM Serial No. is required.'; return; }
+
+  btn.disabled = true;
+  try {
+    var update = {
+      name:        name,
+      ibmSerialNo: serial,
+      email:       email,
+      accountId:   accountId,
+      serviceLine: serviceLine,
+      updatedAt:   firebase.firestore.FieldValue.serverTimestamp()
+    };
+    await _fbDb.collection('masterlist').doc(docId).update(update);
+    // Update in-memory record too
+    var rec = _masterlistRecords.find(function(r) { return r._id === docId; });
+    if (rec) Object.assign(rec, update);
+    showToast('Employee updated.', '✅');
+    closeEditMasterlistModal();
+    _renderMasterlist();
+  } catch(err) {
+    errEl.textContent = 'Failed to save: ' + (err.message || err);
+    console.error(err);
+  }
+  btn.disabled = false;
 }
 
 // ──────────────────────────────────────────────
