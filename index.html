@@ -3280,6 +3280,9 @@
         <div class="nav-item" data-page="wfh-schedule">
           <span class="nav-icon">🏠</span> WFH Schedule
         </div>
+        <div class="nav-item" data-page="role-maintenance">
+          <span class="nav-icon">🔑</span> Role Maintenance
+        </div>
       </div>
 
       <!-- ATTENDANCE entity (admin-only) -->
@@ -3552,6 +3555,30 @@
       </div>
     </div>
 
+    <!-- ══════════════════ ROLE MAINTENANCE PAGE ══════════════════ -->
+    <div class="page" id="page-role-maintenance">
+      <div class="glow-line"></div>
+      <div class="section-header">
+        <div>
+          <div class="section-title">Role Maintenance</div>
+          <div class="section-subtitle">Assign Admin or Auditor roles to employees. Changes take effect on their next sign-in.</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openAddRoleModal()">＋ Add User</button>
+      </div>
+      <div id="role-maintenance-body">
+        <div class="admin-table-wrap">
+          <table class="admin-table" id="role-maintenance-table">
+            <thead><tr>
+              <th>IBM Serial No.</th><th>Name</th><th>Email</th><th>Role</th><th></th>
+            </tr></thead>
+            <tbody id="role-maintenance-tbody">
+              <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- ══════════════════ MONTHLY ATTENDANCE (MONDAY.COM) PAGE ══════════════════ -->
     <div class="page" id="page-monday-attendance">
       <div class="glow-line"></div>
@@ -3639,6 +3666,35 @@
     <div class="admin-modal-sub">Run the importer on an administrator computer. It keeps the Monday token and service-account credential off the hosted dashboard.</div>
     <div class="admin-modal-sub" style="text-align:left;background:var(--surface2);padding:12px;border-radius:8px;">1. Configure <strong>scripts/.env</strong>.<br>2. Save the Firebase service-account JSON in <strong>scripts/service-account.json</strong>.<br>3. Run <strong>npm run import:variances</strong> from the project folder.</div>
     <div class="admin-modal-actions"><button class="btn btn-primary" onclick="closeImportGuide()">Close</button></div>
+  </div>
+</div>
+
+<!-- Role Maintenance — Add/Edit User modal -->
+<div class="admin-modal-overlay" id="role-modal-overlay" onclick="if(event.target===this)closeRoleModal()">
+  <div class="admin-modal" onclick="event.stopPropagation()" style="width:380px;">
+    <div class="admin-modal-icon">🔑</div>
+    <div class="admin-modal-title" id="role-modal-title">Add User Role</div>
+    <div class="admin-modal-sub">Select an employee from the masterlist and assign their role.</div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px;">
+      <div>
+        <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">EMPLOYEE</label>
+        <select id="role-modal-employee" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:8px 10px;outline:none;">
+          <option value="">— Select employee —</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px;">ROLE</label>
+        <select id="role-modal-role" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:8px 10px;outline:none;">
+          <option value="admin">Admin</option>
+          <option value="audit">Auditor</option>
+        </select>
+      </div>
+    </div>
+    <div class="admin-error-msg" id="role-modal-error"></div>
+    <div class="admin-modal-actions">
+      <button class="btn btn-ghost" onclick="closeRoleModal()">Cancel</button>
+      <button class="btn btn-primary" id="role-modal-save-btn" onclick="saveRole()">Save</button>
+    </div>
   </div>
 </div>
 
@@ -4151,6 +4207,7 @@ const PAGE_TITLES = {
   'wfh-schedule':       'WFH Schedule Maintenance',
   'monthly-attendance': 'Monthly Attendance (ILC)',
   'monday-attendance':  'Monthly Attendance (Monday.com)',
+  'role-maintenance':   'Role Maintenance',
 };
 
 let currentPage = 'my-variances';
@@ -4172,6 +4229,7 @@ function navigate(page) {
   if (page === 'wfh-schedule')       loadWfhSchedule();
   if (page === 'monthly-attendance') loadMonthlyAttendance();
   if (page === 'monday-attendance')  loadMondayAttendance();
+  if (page === 'role-maintenance')   loadRoleMaintenance();
   closeSidebar();
 }
 
@@ -4311,10 +4369,26 @@ function handleAuthState(user) {
   const profileRef = _fbDb.collection('users').doc(user.uid);
   profileRef.get().then(function(profile) {
     if (!profile.exists) {
+      // 1. Check hardcoded UID bootstrap map
       var bootstrap = INITIAL_ADMIN_PROFILES[user.uid]
         || (user.email && PENDING_EMAIL_PROFILES[user.email.toLowerCase()]);
       if (bootstrap) {
         return profileRef.set(bootstrap).then(function() { return profileRef.get(); });
+      }
+      // 2. Check pendingRoles collection (set via Role Maintenance page)
+      if (user.email) {
+        return _fbDb.collection('pendingRoles').doc(user.email.toLowerCase()).get()
+          .then(function(pending) {
+            if (pending.exists) {
+              var data = pending.data();
+              return profileRef.set({ role: data.role, mustChangePassword: !!data.mustChangePassword, talentId: '' })
+                .then(function() {
+                  return _fbDb.collection('pendingRoles').doc(user.email.toLowerCase()).delete();
+                })
+                .then(function() { return profileRef.get(); });
+            }
+            return profile;
+          });
       }
     }
     return profile;
@@ -5027,6 +5101,179 @@ async function toggleMasterlistStatus(docId, currentStatus) {
     showToast('Status updated to ' + newStatus + '.', '✅');
     loadMasterlist();
   } catch(err) { showToast('Failed to update status.'); }
+}
+
+// ──────────────────────────────────────────────
+// ── ROLE MAINTENANCE
+// ──────────────────────────────────────────────
+var _roleRecords = [];   // { uid, email, role, ibmSerialNo, name }
+
+async function loadRoleMaintenance() {
+  if (!_fbDb) return;
+  var tbody = document.getElementById('role-maintenance-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>';
+  try {
+    // Load users collection and masterlist in parallel
+    var results = await Promise.all([
+      _fbDb.collection('users').get(),
+      _fbDb.collection('masterlist').get()
+    ]);
+    var usersSnap = results[0], mlSnap = results[1];
+
+    // Build email → masterlist lookup
+    var mlByEmail = {};
+    mlSnap.forEach(function(d) {
+      var e = d.data();
+      if (e.email) mlByEmail[e.email.toLowerCase()] = e;
+    });
+
+    _roleRecords = [];
+    usersSnap.forEach(function(d) {
+      var u = d.data();
+      var role = u.role || 'user';
+      if (role === 'user') return;   // only show admin / audit rows
+      var ml = mlByEmail[(u.email || '').toLowerCase()] || {};
+      _roleRecords.push({
+        uid:         d.id,
+        email:       u.email || '',
+        role:        role,
+        ibmSerialNo: ml.ibmSerialNo || u.talentId || '',
+        name:        ml.name || ''
+      });
+    });
+
+    // Sort: name A–Z
+    _roleRecords.sort(function(a, b) {
+      var nA = _lastNameKey(a.name || a.email), nB = _lastNameKey(b.name || b.email);
+      return nA < nB ? -1 : nA > nB ? 1 : 0;
+    });
+
+    _renderRoleMaintenance();
+  } catch(err) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--danger);padding:16px;">Error loading roles.</td></tr>';
+    console.error(err);
+  }
+}
+
+function _renderRoleMaintenance() {
+  var tbody = document.getElementById('role-maintenance-tbody');
+  if (!tbody) return;
+  if (!_roleRecords.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">No admin or auditor roles assigned yet. Click ＋ Add User to get started.</td></tr>';
+    return;
+  }
+  var ROLE_PILL = {
+    admin: '<span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);">Admin</span>',
+    audit: '<span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;background:rgba(16,185,129,0.13);color:#34d399;border:1px solid rgba(16,185,129,0.3);">Auditor</span>'
+  };
+  tbody.innerHTML = _roleRecords.map(function(r) {
+    var pill = ROLE_PILL[r.role] || escapeHtml(r.role);
+    return '<tr>' +
+      '<td>' + escapeHtml(r.ibmSerialNo) + '</td>' +
+      '<td>' + escapeHtml(r.name)        + '</td>' +
+      '<td>' + escapeHtml(r.email)       + '</td>' +
+      '<td>' + pill                      + '</td>' +
+      '<td style="white-space:nowrap;">' +
+        '<button class="btn btn-ghost btn-sm" onclick="openEditRoleModal(' + "'" + escapeHtml(r.uid) + "','" + escapeHtml(r.role) + "'" + ')">Edit</button> ' +
+        '<button class="btn btn-danger btn-sm" onclick="removeRole(' + "'" + escapeHtml(r.uid) + "'" + ')">Remove</button>' +
+      '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+async function openAddRoleModal() {
+  document.getElementById('role-modal-title').textContent = 'Add User Role';
+  document.getElementById('role-modal-error').textContent = '';
+  document.getElementById('role-modal-save-btn').dataset.uid = '';
+
+  // Populate employee dropdown from masterlist — exclude already-assigned emails
+  var assignedEmails = new Set(_roleRecords.map(function(r) { return r.email.toLowerCase(); }));
+  var snap = await _fbDb.collection('masterlist').get();
+  var emps = [];
+  snap.forEach(function(d) {
+    var e = d.data();
+    if (e.email && !assignedEmails.has(e.email.toLowerCase())) emps.push(e);
+  });
+  emps.sort(function(a, b) {
+    var nA = _lastNameKey(a.name), nB = _lastNameKey(b.name);
+    return nA < nB ? -1 : nA > nB ? 1 : 0;
+  });
+  var sel = document.getElementById('role-modal-employee');
+  sel.innerHTML = '<option value="">— Select employee —</option>' +
+    emps.map(function(e) {
+      return '<option value="' + escapeHtml(e.email) + '">' +
+        escapeHtml(e.name || e.email) + ' (' + escapeHtml(e.email) + ')</option>';
+    }).join('');
+  sel.disabled = false;
+  document.getElementById('role-modal-overlay').classList.add('open');
+}
+
+function openEditRoleModal(uid, currentRole) {
+  document.getElementById('role-modal-title').textContent = 'Edit Role';
+  document.getElementById('role-modal-error').textContent = '';
+  document.getElementById('role-modal-save-btn').dataset.uid = uid;
+  // Find the record to pre-fill
+  var rec = _roleRecords.find(function(r) { return r.uid === uid; }) || {};
+  var sel = document.getElementById('role-modal-employee');
+  sel.innerHTML = '<option value="' + escapeHtml(rec.email) + '">' + escapeHtml(rec.name || rec.email) + '</option>';
+  sel.disabled = true;
+  document.getElementById('role-modal-role').value = currentRole;
+  document.getElementById('role-modal-overlay').classList.add('open');
+}
+
+function closeRoleModal() {
+  document.getElementById('role-modal-overlay').classList.remove('open');
+}
+
+async function saveRole() {
+  var btn   = document.getElementById('role-modal-save-btn');
+  var errEl = document.getElementById('role-modal-error');
+  var email = document.getElementById('role-modal-employee').value.trim();
+  var role  = document.getElementById('role-modal-role').value;
+  var editUid = btn.dataset.uid;
+
+  errEl.textContent = '';
+  if (!email) { errEl.textContent = 'Please select an employee.'; return; }
+
+  btn.disabled = true;
+  try {
+    if (editUid) {
+      // Edit existing — just update role field
+      await _fbDb.collection('users').doc(editUid).update({ role: role });
+      showToast('Role updated.', '✅');
+    } else {
+      // New user — look up by email in users collection first
+      var snap = await _fbDb.collection('users').where('email', '==', email).limit(1).get();
+      if (!snap.empty) {
+        await _fbDb.collection('users').doc(snap.docs[0].id).update({ role: role });
+      } else {
+        // Account not yet created — store as pending profile keyed by email
+        await _fbDb.collection('pendingRoles').doc(email.toLowerCase()).set({ email: email, role: role, mustChangePassword: true });
+        showToast('Role saved. Will apply when ' + email + ' signs in for the first time.', 'ℹ️');
+        closeRoleModal();
+        loadRoleMaintenance();
+        btn.disabled = false;
+        return;
+      }
+      showToast('Role assigned.', '✅');
+    }
+    closeRoleModal();
+    loadRoleMaintenance();
+  } catch(err) {
+    errEl.textContent = 'Failed to save role: ' + (err.message || err);
+    console.error(err);
+  }
+  btn.disabled = false;
+}
+
+async function removeRole(uid) {
+  if (!confirm('Remove this user\'s role? They will lose admin/auditor access on next sign-in.')) return;
+  try {
+    await _fbDb.collection('users').doc(uid).update({ role: 'user' });
+    showToast('Role removed.', '✅');
+    loadRoleMaintenance();
+  } catch(err) { showToast('Failed to remove role.', '❌'); console.error(err); }
 }
 
 // ──────────────────────────────────────────────

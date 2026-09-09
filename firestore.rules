@@ -12,6 +12,13 @@ service cloud.firestore {
       ];
     }
 
+    function isAdmin() {
+      return isInitialAdmin() || (
+        signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
     function isAuditor() {
       return signedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'audit';
@@ -23,11 +30,11 @@ service cloud.firestore {
       // create a circular evaluation loop and cause permission-denied errors on all isAuditor() checks.
       allow read: if signedIn() && (
         request.auth.uid == userId ||
-        isInitialAdmin() ||
+        isAdmin() ||
         resource.data.role == 'audit'
       );
-      allow create, delete: if isInitialAdmin();
-      allow update: if isInitialAdmin() || (
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
         request.auth.uid == userId &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['mustChangePassword']) &&
         request.resource.data.mustChangePassword == false
@@ -48,29 +55,37 @@ service cloud.firestore {
       }
     }
 
+    // ── Pending roles (set by Role Maintenance before Firebase account exists) ──
+    match /pendingRoles/{docId} {
+      allow read, write: if isAdmin();
+      // Also allow the newly-signed-in user to read their own pending role (by email = docId)
+      allow read, delete: if signedIn() && request.auth.token.email != null &&
+        request.auth.token.email.lower() == docId;
+    }
+
     // ── Admin-managed collections ──
     match /masterlist/{docId} {
-      allow read:  if isInitialAdmin() || isAuditor();
-      allow write: if isInitialAdmin();
+      allow read:  if isAdmin() || isAuditor();
+      allow write: if isAdmin();
     }
 
     match /serviceLines/{docId} {
-      allow read:  if isInitialAdmin() || isAuditor();
-      allow write: if isInitialAdmin();
+      allow read:  if isAdmin() || isAuditor();
+      allow write: if isAdmin();
     }
 
     match /wfhSchedule/{docId} {
-      allow read:  if isInitialAdmin() || isAuditor();
-      allow write: if isInitialAdmin();
+      allow read:  if isAdmin() || isAuditor();
+      allow write: if isAdmin();
     }
 
     match /monthlyAttendance/{docId} {
-      allow read:  if isInitialAdmin() || isAuditor();
+      allow read:  if isAdmin() || isAuditor();
       allow write: if signedIn();
     }
 
     match /mondayAttendance/{docId} {
-      allow read:  if isInitialAdmin() || isAuditor();
+      allow read:  if isAdmin() || isAuditor();
       allow write: if signedIn();
     }
   }
