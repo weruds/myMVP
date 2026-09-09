@@ -5815,27 +5815,25 @@ function _renderMonthlyAtt() {
     var thu = parseFloat(r.thursday  || 0) || 0;
     var fri = parseFloat(r.friday    || 0) || 0;
 
-    // ── Half-day variance: count days that have 2 activities but total ≠ 8.5
-    var DAY_KEYS_RENDER = ['saturday','sunday','monday','tuesday','wednesday','thursday','friday'];
-    var dayVals = { saturday:sat, sunday:sun, monday:mon, tuesday:tue, wednesday:wed, thursday:thu, friday:fri };
-    var halfDayVarianceCount = 0;
-    DAY_KEYS_RENDER.forEach(function(dk) {
-      var codes = Array.isArray(abd[dk]) ? abd[dk] : (abd[dk] ? [abd[dk]] : []);
-      if (codes.length > 1) {
-        // This day has multiple activities (half-day). Total for this day must be 8.5.
-        if (Math.abs(dayVals[dk] - 8.5) > 0.001) halfDayVarianceCount++;
-      }
-    });
-
-    // ── Variance logic: flag only when hours ≠ 8 AND not an expected GB+Activity combo (8.5 or 9)
-    var isVariance = actList.some(function(act) {
-      return ILC_VARIANCE_ACTIVITIES.has(act);
-    }) && [sat,sun,mon,tue,wed,thu,fri].some(function(h) {
-      return h > 0 && h !== 8 && Math.abs(h - 8.5) > 0.001 && h !== 9;
-    });
-
-    // If any half-day variance exists, also flag the activity cell
-    var hasHalfDayVar = halfDayVarianceCount > 0;
+    // ── PARKED: Half-day variance logic (do not remove — needs review before re-enabling)
+    // var DAY_KEYS_RENDER = ['saturday','sunday','monday','tuesday','wednesday','thursday','friday'];
+    // var dayVals = { saturday:sat, sunday:sun, monday:mon, tuesday:tue, wednesday:wed, thursday:thu, friday:fri };
+    // var halfDayVarianceCount = 0;
+    // DAY_KEYS_RENDER.forEach(function(dk) {
+    //   var codes = Array.isArray(abd[dk]) ? abd[dk] : (abd[dk] ? [abd[dk]] : []);
+    //   if (codes.length > 1) {
+    //     // This day has multiple activities (half-day). Total for this day must be 8.5.
+    //     if (Math.abs(dayVals[dk] - 8.5) > 0.001) halfDayVarianceCount++;
+    //   }
+    // });
+    // var isVariance = actList.some(function(act) {
+    //   return ILC_VARIANCE_ACTIVITIES.has(act);
+    // }) && [sat,sun,mon,tue,wed,thu,fri].some(function(h) {
+    //   return h > 0 && h !== 8 && Math.abs(h - 8.5) > 0.001 && h !== 9;
+    // });
+    // var hasHalfDayVar = halfDayVarianceCount > 0;
+    var halfDayVarianceCount = 0; // parked — always 0 until logic is re-enabled
+    var hasHalfDayVar = false;
 
     var total     = sat + sun + mon + tue + wed + thu + fri;
     var otWeekday = [mon,tue,wed,thu,fri].reduce(function(a,h){ return a + (h>9?h-9:0); }, 0);
