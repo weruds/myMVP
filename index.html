@@ -6091,8 +6091,9 @@ async function runMasterSync() {
     mlSnap.forEach(function(d) { mlDocs.push({ id: d.id, data: d.data() }); });
 
     // ── 2. Build unified employee map keyed by ibmSerialNo ────────────────────
-    // Each entry: { serial, name, accountId, email }
+    // Each entry: { serial, name, accountId, email, serviceLine }
     // We merge from all 3 sources; best value wins per field.
+    // serviceLine: Masterlist field = serviceLine, Monday field = group — treated as the same concept.
     var empMap = {};   // ibmSerialNo → unified truth object
 
     // Helper: pick the "best" name between two candidates
@@ -6109,10 +6110,12 @@ async function runMasterSync() {
     // Helper: register a record into empMap
     // priority: 1=ILC (highest), 2=Monday, 3=Masterlist (lowest)
     function _mergeInto(r, priority) {
-      var sn    = (r.ibmSerialNo || '').trim();
-      var nn    = _normaliseName(r.name || '');
-      var email = (r.email       || '').trim().toLowerCase();
-      var acct  = (r.accountId   || '').trim();
+      var sn   = (r.ibmSerialNo || '').trim();
+      var nn   = _normaliseName(r.name || '');
+      var email = (r.email      || '').trim().toLowerCase();
+      var acct  = (r.accountId  || '').trim();
+      // Monday stores service line as "group"; Masterlist stores as "serviceLine"
+      var sl    = (r.serviceLine || r.group || '').trim();
 
       // Find or create entry — match by serial first, then by normalised name
       var key = null;
@@ -6135,7 +6138,7 @@ async function runMasterSync() {
       }
 
       if (!empMap[key]) {
-        empMap[key] = { serial: sn, name: nn, email: email, accountId: acct, _priority: priority };
+        empMap[key] = { serial: sn, name: nn, email: email, accountId: acct, serviceLine: sl, _priority: priority };
         return;
       }
 
@@ -6148,13 +6151,16 @@ async function runMasterSync() {
       var newHasBoth = !!(sn && email);
       var oldHasBoth = !!(e.serial && e.email);
       if (newHasBoth && !oldHasBoth) {
-        e.email = email;          // new source has serial+email — authoritative
+        e.email = email;
       } else if (!oldHasBoth && !newHasBoth && !e.email && email) {
-        e.email = email;          // neither has both — take first available
+        e.email = email;
       }
       // AccountId: fill if missing; higher-priority (lower number) overwrites
       if (!e.accountId && acct) e.accountId = acct;
       else if (acct && priority < e._priority) e.accountId = acct;
+      // ServiceLine: fill if missing; higher-priority overwrites
+      if (!e.serviceLine && sl) e.serviceLine = sl;
+      else if (sl && priority < e._priority) e.serviceLine = sl;
       // Track best priority seen
       if (priority < e._priority) e._priority = priority;
     }
@@ -6174,18 +6180,25 @@ async function runMasterSync() {
     });
 
     // ── 4. Diff helper — returns patch object or null ─────────────────────────
-    function _diffRow(r) {
+    function _diffRow(r, isMondayRecord) {
       var sn    = (r.ibmSerialNo || '').trim();
       var nn    = _normaliseName(r.name || '');
       var acct  = (r.accountId  || '').trim();
       var email = (r.email      || '').trim().toLowerCase();
+      // Monday uses "group" for service line; ILC/Masterlist use "serviceLine"
+      var sl    = isMondayRecord ? (r.group || '').trim() : (r.serviceLine || '').trim();
       var truth = (sn && bySerial[sn]) || (nn && byNormName[nn]) || null;
       if (!truth) return null;
       var patch = {};
-      if (truth.serial    && sn    !== truth.serial)    patch.ibmSerialNo = truth.serial;
-      if (truth.accountId && acct  !== truth.accountId) patch.accountId   = truth.accountId;
-      if (truth.email     && email !== truth.email)     patch.email       = truth.email;
-      if (truth.name      && truth.name !== nn)         patch.name        = truth.name;
+      if (truth.serial      && sn    !== truth.serial)      patch.ibmSerialNo = truth.serial;
+      if (truth.accountId   && acct  !== truth.accountId)   patch.accountId   = truth.accountId;
+      if (truth.email       && email !== truth.email)       patch.email       = truth.email;
+      if (truth.name        && truth.name !== nn)           patch.name        = truth.name;
+      if (truth.serviceLine && sl !== truth.serviceLine) {
+        // Monday records store service line as "group"
+        if (isMondayRecord) patch.group       = truth.serviceLine;
+        else                patch.serviceLine = truth.serviceLine;
+      }
       return Object.keys(patch).length ? patch : null;
     }
 
@@ -6196,7 +6209,7 @@ async function runMasterSync() {
 
     // ── 5a. Patch in-memory ILC records instantly ─────────────────────────────
     _monthlyAttRecords.forEach(function(r) {
-      var patch = _diffRow(r);
+      var patch = _diffRow(r, false);
       if (!patch) return;
       Object.assign(r, patch);
       if (r._id) attWrites.push({ col: 'monthlyAttendance', id: r._id, patch: patch });
@@ -6205,7 +6218,7 @@ async function runMasterSync() {
 
     // ── 5b. Patch in-memory Monday records instantly ──────────────────────────
     _mondayAttRecords.forEach(function(r) {
-      var patch = _diffRow(r);
+      var patch = _diffRow(r, true);
       if (!patch) return;
       Object.assign(r, patch);
       if (r._id) attWrites.push({ col: 'mondayAttendance', id: r._id, patch: patch });
@@ -6214,7 +6227,7 @@ async function runMasterSync() {
 
     // ── 5c. Patch masterlist docs ─────────────────────────────────────────────
     mlDocs.forEach(function(m) {
-      var patch = _diffRow(m.data);
+      var patch = _diffRow(m.data, false);
       if (patch) { mlWrites.push({ id: m.id, patch: patch }); mlPatched++; }
     });
 
@@ -6225,7 +6238,7 @@ async function runMasterSync() {
       if (!t.serial || mlSerials.has(t.serial)) return;
       mlWrites.push({
         id: null, isSet: true,
-        patch: { ibmSerialNo: t.serial, name: t.name, accountId: t.accountId, email: t.email, status: 'Active', updatedAt: ts }
+        patch: { ibmSerialNo: t.serial, name: t.name, accountId: t.accountId, email: t.email, serviceLine: t.serviceLine, status: 'Active', updatedAt: ts }
       });
       newMlCount++;
     });
