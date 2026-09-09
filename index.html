@@ -7563,7 +7563,8 @@ async function detectWfhVariances() {
     var ts = firebase.firestore.FieldValue.serverTimestamp();
     var batch = _fbDb.batch();
     var batchCount = 0;
-    var BATCH_LIMIT = 490;
+    var totalWritten = 0;
+    var BATCH_LIMIT = 200;
 
     for (var i = 0; i < mondayRecords.length; i++) {
       var r = mondayRecords[i];
@@ -7633,16 +7634,19 @@ async function detectWfhVariances() {
           detectedAt:        ts
         });
         batchCount++;
+        totalWritten++;
         if (batchCount >= BATCH_LIMIT) {
           await batch.commit();
           batch = _fbDb.batch();
           batchCount = 0;
+          // Brief pause to avoid quota exhaustion on large datasets
+          await new Promise(function(res) { setTimeout(res, 300); });
         }
       }
     }
     if (batchCount > 0) await batch.commit();
 
-    showToast('WFH variance detection complete — ' + batchCount + ' variance(s) written.', '✅');
+    showToast('WFH variance detection complete — ' + totalWritten + ' variance(s) written.', '✅');
     loadWfhVariance(true);
   } catch(err) {
     showToast('Error detecting variances: ' + (err.message || err), '❌');
@@ -7897,7 +7901,8 @@ async function detectIlcVariances() {
     var ts = firebase.firestore.FieldValue.serverTimestamp();
     var batch = _fbDb.batch();
     var batchCount = 0;
-    var BATCH_LIMIT = 490;
+    var totalWritten = 0;
+    var BATCH_LIMIT = 200;
 
     // Fetch ILC records and filter in-memory by year/month if selected
     var ilcRecords = [];
@@ -7994,16 +7999,18 @@ async function detectIlcVariances() {
           detectedAt:     ts
         });
         batchCount++;
+        totalWritten++;
         if (batchCount >= BATCH_LIMIT) {
           await batch.commit();
           batch = _fbDb.batch();
           batchCount = 0;
+          await new Promise(function(res) { setTimeout(res, 300); });
         }
       }
     }
     if (batchCount > 0) await batch.commit();
 
-    showToast('ILC variance detection complete — ' + batchCount + ' variance(s) written.', '✅');
+    showToast('ILC variance detection complete — ' + totalWritten + ' variance(s) written.', '✅');
     loadIlcVariance(true);
   } catch(err) {
     showToast('Error detecting ILC variances: ' + (err.message || err), '❌');

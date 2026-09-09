@@ -88,5 +88,15 @@ service cloud.firestore {
       allow read:  if isAdmin() || isAuditor();
       allow write: if signedIn();
     }
+
+    match /wfhVariances/{docId} {
+      allow read:  if isAdmin() || isAuditor();
+      allow write: if isAdmin();
+    }
+
+    match /ilcMondayVariances/{docId} {
+      allow read:  if isAdmin() || isAuditor();
+      allow write: if isAdmin();
+    }
   }
 }
