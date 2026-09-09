@@ -4244,6 +4244,13 @@ const INITIAL_ADMIN_PROFILES = {
   zdhAsiaIXpQwEJ0v1YmH26hK6xL2: { talentId: 'P102HG', role: 'admin', mustChangePassword: false },
   TDg3rvs7ZfQTggdBUx4xEGNL1P42: { talentId: '', role: 'admin', mustChangePassword: false }
 };
+// Profiles bootstrapped by email — used when the Firebase account hasn't been
+// created yet (UID unknown). Applied on first login when no Firestore doc exists.
+const PENDING_EMAIL_PROFILES = {
+  'mark.jonah@ibm.com':        { talentId: '', role: 'admin',  mustChangePassword: true },
+  'mark.wu@ibm.com':           { talentId: '', role: 'admin',  mustChangePassword: true },
+  'fahamuddin.salik@ibm.com':  { talentId: '', role: 'audit',  mustChangePassword: true }
+};
 let _authUser    = null;
 let _authProfile = null;
 
@@ -4303,8 +4310,12 @@ function handleAuthState(user) {
   if (!user) { loadMyVariances(); return; }
   const profileRef = _fbDb.collection('users').doc(user.uid);
   profileRef.get().then(function(profile) {
-    if (!profile.exists && INITIAL_ADMIN_PROFILES[user.uid]) {
-      return profileRef.set(INITIAL_ADMIN_PROFILES[user.uid]).then(function() { return profileRef.get(); });
+    if (!profile.exists) {
+      var bootstrap = INITIAL_ADMIN_PROFILES[user.uid]
+        || (user.email && PENDING_EMAIL_PROFILES[user.email.toLowerCase()]);
+      if (bootstrap) {
+        return profileRef.set(bootstrap).then(function() { return profileRef.get(); });
+      }
     }
     return profile;
   }).then(function(profile) {
