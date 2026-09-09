@@ -3456,20 +3456,27 @@
           <div class="section-subtitle">Manage work-from-home schedules per employee.</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <label class="btn btn-ghost" style="cursor:pointer;">
+          <label class="btn btn-primary btn-sm" style="cursor:pointer;">
             📤 Upload WFH Schedule
             <input type="file" id="wfh-upload-input" accept=".csv,.xlsx" style="display:none;" onchange="handleWfhUpload(event)" />
           </label>
-          <button class="btn btn-primary" onclick="openAddWfhModal()">＋ Add Record</button>
-          <button class="btn btn-ghost btn-sm" onclick="loadWfhSchedule()">Refresh</button>
+          <button class="btn btn-danger btn-sm" onclick="openResetWfhModal()">🗑 Reset Schedule</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadWfhSchedule()">↻ Refresh</button>
         </div>
       </div>
       <div id="wfh-schedule-body">
         <div class="admin-table-wrap">
           <table class="admin-table" id="wfh-table">
-            <thead><tr><th>Name</th><th>Email</th><th>WFH Day 1</th><th>WFH Day 2</th><th></th></tr></thead>
+            <thead><tr>
+              <th>IBM Serial No.</th>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Days Selection</th>
+              <th>WFH Status</th>
+              <th></th>
+            </tr></thead>
             <tbody id="wfh-tbody">
-              <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">No WFH records found.</td></tr>
+              <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">No WFH records found.</td></tr>
             </tbody>
           </table>
         </div>
@@ -3755,6 +3762,23 @@
     <div class="admin-modal-actions">
       <button class="btn btn-ghost" onclick="closeEditMasterlistModal()">Cancel</button>
       <button class="btn btn-primary" id="ml-edit-save-btn" onclick="saveMasterlistEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset WFH Schedule — Confirmation modal -->
+<div class="admin-modal-overlay" id="reset-wfh-overlay" onclick="if(event.target===this)closeResetWfhModal()">
+  <div class="admin-modal" onclick="event.stopPropagation()">
+    <div class="admin-modal-icon">⚠️</div>
+    <div class="admin-modal-title">Reset WFH Schedule?</div>
+    <div class="admin-modal-sub">
+      This will <strong>permanently delete all WFH schedule records</strong>.<br><br>
+      After resetting, you must <strong>re-upload an updated WFH Schedule</strong> to restore records.
+    </div>
+    <div id="reset-wfh-error" style="font-size:12px;color:var(--danger);min-height:16px;margin-bottom:8px;"></div>
+    <div class="admin-modal-actions">
+      <button class="btn btn-ghost" onclick="closeResetWfhModal()">Cancel</button>
+      <button class="btn btn-danger" id="reset-wfh-confirm-btn" onclick="confirmResetWfh()">Yes, Reset Schedule</button>
     </div>
   </div>
 </div>
@@ -5525,8 +5549,14 @@ async function saveWfhRecord() {
   var btn = document.getElementById('wfh-save-btn');
   btn.disabled = true; btn.textContent = 'Saving…';
   try {
+    // Enrich with ibmSerialNo from masterlist
+    var ibmSerialNo = '';
+    var mlSnap = await _fbDb.collection('masterlist').where('email', '==', email.toLowerCase()).limit(1).get();
+    if (!mlSnap.empty) ibmSerialNo = mlSnap.docs[0].data().ibmSerialNo || '';
     await _fbDb.collection('wfhSchedule').add({
-      name: name, email: email, wfhDay1: day1, wfhDay2: day2,
+      ibmSerialNo: ibmSerialNo, name: name, email: email,
+      daysSelection: (day1 && day2) ? day1 + ', ' + day2 : (day1 || day2 || ''),
+      wfhStatus: 'Active',
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     closeModal('modal-add-wfh');
@@ -5544,28 +5574,45 @@ function loadWfhSchedule() {
   if (!_fbDb) return;
   var tbody = document.getElementById('wfh-tbody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>';
   _fbDb.collection('wfhSchedule').orderBy('name').get().then(function(snap) {
     if (snap.empty) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">No WFH records found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:32px;">No WFH records found.</td></tr>';
       return;
     }
     var rows = '';
     snap.forEach(function(d) {
-      var r = d.data();
+      var r   = d.data();
+      var isActive = (r.wfhStatus || 'Active') === 'Active';
+      var statusPill = isActive
+        ? '<span class="pill-active">Active</span>'
+        : '<span class="pill-inactive">Inactive</span>';
       rows += '<tr>' +
-        '<td>' + escapeHtml(r.name || '') + '</td>' +
-        '<td>' + escapeHtml(r.email || '') + '</td>' +
-        '<td>' + escapeHtml(r.wfhDay1 || '') + '</td>' +
-        '<td>' + escapeHtml(r.wfhDay2 || '') + '</td>' +
-        '<td><button class="btn btn-danger btn-sm" onclick="deleteWfhRecord(\'' + d.id + '\')">Delete</button></td>' +
+        '<td>' + escapeHtml(r.ibmSerialNo    || '') + '</td>' +
+        '<td>' + escapeHtml(r.name           || '') + '</td>' +
+        '<td>' + escapeHtml(r.email          || '') + '</td>' +
+        '<td>' + escapeHtml(r.daysSelection  || r.wfhDay1 && (r.wfhDay1 + (r.wfhDay2 ? ', ' + r.wfhDay2 : '')) || '') + '</td>' +
+        '<td>' + statusPill + '</td>' +
+        '<td style="white-space:nowrap;">' +
+          '<button class="btn btn-ghost btn-sm" onclick="toggleWfhStatus(\'' + d.id + '\',\'' + escapeHtml(r.wfhStatus || 'Active') + '\')" style="margin-right:4px;">' + (isActive ? 'Set Inactive' : 'Set Active') + '</button>' +
+          '<button class="btn btn-danger btn-sm" onclick="deleteWfhRecord(\'' + d.id + '\')">Delete</button>' +
+        '</td>' +
         '</tr>';
     });
     tbody.innerHTML = rows;
   }).catch(function(err) {
-    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--danger);padding:16px;">Error loading WFH schedule.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--danger);padding:16px;">Error loading WFH schedule.</td></tr>';
     console.error(err);
   });
+}
+
+async function toggleWfhStatus(docId, currentStatus) {
+  var newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
+  try {
+    await _fbDb.collection('wfhSchedule').doc(docId).update({ wfhStatus: newStatus });
+    showToast('WFH status updated to ' + newStatus + '.', '✅');
+    loadWfhSchedule();
+  } catch(err) { showToast('Failed to update status.', '❌'); }
 }
 
 async function deleteWfhRecord(docId) {
@@ -5575,6 +5622,38 @@ async function deleteWfhRecord(docId) {
     showToast('WFH record deleted.', '🗑️');
     loadWfhSchedule();
   } catch(err) { showToast('Failed to delete.'); }
+}
+
+function openResetWfhModal() {
+  document.getElementById('reset-wfh-error').textContent = '';
+  var btn = document.getElementById('reset-wfh-confirm-btn');
+  btn.disabled = false; btn.textContent = 'Yes, Reset Schedule';
+  document.getElementById('reset-wfh-overlay').classList.add('open');
+}
+
+function closeResetWfhModal() {
+  document.getElementById('reset-wfh-overlay').classList.remove('open');
+}
+
+async function confirmResetWfh() {
+  var btn   = document.getElementById('reset-wfh-confirm-btn');
+  var errEl = document.getElementById('reset-wfh-error');
+  btn.disabled = true; btn.textContent = 'Resetting…';
+  try {
+    var snap = await _fbDb.collection('wfhSchedule').get();
+    var BATCH = 490, cur = _fbDb.batch(), count = 0;
+    snap.forEach(function(d) {
+      cur.delete(d.ref);
+      if (++count >= BATCH) { cur.commit(); cur = _fbDb.batch(); count = 0; }
+    });
+    if (count > 0) await cur.commit();
+    closeResetWfhModal();
+    showToast('WFH Schedule cleared. Please re-upload.', '🗑️');
+    loadWfhSchedule();
+  } catch(err) {
+    errEl.textContent = 'Reset failed: ' + (err.message || err);
+    btn.disabled = false; btn.textContent = 'Yes, Reset Schedule';
+  }
 }
 
 function handleWfhUpload(event) {
@@ -5588,16 +5667,36 @@ function handleWfhUpload(event) {
       collection: 'wfhSchedule',
       idField:    null,
       requireFinalConfirm: true,
-      finalConfirmMsg:  'Please confirm this is the <strong>final version</strong> of the WFH Schedule. Any future updates will require approval from Managers before being re-uploaded.',
-      // Single comma-separated WFH Days column → split into wfhDay1 / wfhDay2
-      splitWfhDays: true,
+      finalConfirmMsg: 'Please confirm this is the <strong>final version</strong> of the WFH Schedule. Any future updates will require approval from Managers before being re-uploaded.',
       columns: [
-        { label: 'Name',      key: 'name',    aliases: ['name','full name','fullname','employee name'] },
-        { label: 'Email',     key: 'email',   aliases: ['email','email address','e-mail'] },
-        { label: 'WFH Days',  key: '_wfhDays', aliases: ['wfh days','wfhdays','wfh day','wfhday','days','wfh','work from home days','wfh schedule'] },
-        { label: 'WFH Day 1', key: 'wfhDay1', aliases: ['wfh day 1','wfhday1','day 1','day1','wfh1'] },
-        { label: 'WFH Day 2', key: 'wfhDay2', aliases: ['wfh day 2','wfhday2','day 2','day2','wfh2'] }
+        { label: 'IBM Serial No.', key: 'ibmSerialNo',   aliases: ['ibm serial no','ibm serial','ibmserial','serial no','serialno','serial'] },
+        { label: 'Name',           key: 'name',           aliases: ['name','full name','fullname','employee name'] },
+        { label: 'Email',          key: 'email',          aliases: ['email','email address','e-mail'] },
+        { label: 'Days Selection', key: 'daysSelection',  aliases: ['days selection','days','wfh days','wfhdays','wfh day','day selection','work from home days','wfh schedule','schedule'] },
       ],
+      // After import, enrich ibmSerialNo from masterlist by email/name match, set default status
+      onBeforeWrite: async function(rowsToWrite) {
+        var mlSnap = await _fbDb.collection('masterlist').get();
+        var byEmail = {}, byName = {};
+        mlSnap.forEach(function(d) {
+          var m = d.data();
+          if (m.email) byEmail[m.email.trim().toLowerCase()] = m.ibmSerialNo || '';
+          if (m.name)  byName[_normaliseName(m.name)]        = m.ibmSerialNo || '';
+        });
+        rowsToWrite.forEach(function(r) {
+          // Default status
+          if (!r.wfhStatus) r.wfhStatus = 'Active';
+          // Normalise name
+          if (r.name) r.name = _normaliseName(r.name);
+          // Enrich serial from masterlist if missing
+          if (!r.ibmSerialNo) {
+            var emailKey = (r.email || '').trim().toLowerCase();
+            var nameKey  = _normaliseName(r.name || '');
+            r.ibmSerialNo = byEmail[emailKey] || byName[nameKey] || '';
+          }
+        });
+        return rowsToWrite;
+      },
       onSuccess: function() { loadWfhSchedule(); }
     };
     _openUploadPreview(rows, schema);
@@ -6742,6 +6841,12 @@ async function confirmUpload() {
   // Optional async pre-process hook (e.g. enrich rows from masterlist before write)
   if (schema.preProcess) {
     await schema.preProcess(rows);
+  }
+
+  // Optional async transform hook — can return a modified rows array
+  if (schema.onBeforeWrite) {
+    var transformed = await schema.onBeforeWrite(rows);
+    if (transformed) rows = transformed;
   }
 
   // ── Close both modals immediately so the UI feels instant
