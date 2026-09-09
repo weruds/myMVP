@@ -7514,16 +7514,15 @@ async function detectWfhVariances() {
   if (!_fbDb) return;
   var year  = (document.getElementById('wfh-var-year')  || {}).value || '';
   var month = (document.getElementById('wfh-var-month') || {}).value || '';
-  if (!year || !month) { showToast('Please select a Year and Month first.', '⚠️'); return; }
 
   showToast('Detecting variances…', '🔍');
 
   try {
+    var mondayQuery = _fbDb.collection('mondayAttendance');
+    if (year)  mondayQuery = mondayQuery.where('year',  '==', year);
+    if (month) mondayQuery = mondayQuery.where('month', '==', month);
     var results = await Promise.all([
-      _fbDb.collection('mondayAttendance')
-        .where('year',  '==', year)
-        .where('month', '==', month)
-        .get(),
+      mondayQuery.get(),
       _fbDb.collection('wfhSchedule').get()
     ]);
 
@@ -7851,20 +7850,17 @@ async function detectIlcVariances() {
   if (!_fbDb) return;
   var year  = (document.getElementById('ilc-var-year')  || {}).value || '';
   var month = (document.getElementById('ilc-var-month') || {}).value || '';
-  if (!year || !month) { showToast('Please select a Year and Month first.', '⚠️'); return; }
 
   showToast('Detecting ILC variances…', '🔍');
 
   try {
+    var ilcQuery    = _fbDb.collection('monthlyAttendance');
+    var mondayQuery = _fbDb.collection('mondayAttendance');
+    if (year)  { ilcQuery = ilcQuery.where('year',  '==', year);  mondayQuery = mondayQuery.where('year',  '==', year); }
+    if (month) { ilcQuery = ilcQuery.where('month', '==', month); mondayQuery = mondayQuery.where('month', '==', month); }
     var results = await Promise.all([
-      _fbDb.collection('monthlyAttendance')
-        .where('year',  '==', year)
-        .where('month', '==', month)
-        .get(),
-      _fbDb.collection('mondayAttendance')
-        .where('year',  '==', year)
-        .where('month', '==', month)
-        .get()
+      ilcQuery.get(),
+      mondayQuery.get()
     ]);
 
     var ilcSnap    = results[0];
