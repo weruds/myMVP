@@ -5949,6 +5949,8 @@ function _renderMondayAtt() {
   var nameFilter = document.getElementById('monday-att-name').value;
   var group      = document.getElementById('monday-att-group').value;
   var filtered = _mondayAttRecords.filter(function(r) {
+    // Exclude records missing all three identity fields
+    if (!(r.ibmSerialNo || '').trim() && !(r.name || '').trim() && !(r.email || '').trim()) return false;
     if (year       && String(r.year || (r.date || '').substring(0,4)) !== year) return false;
     if (month      && r.month !== month)                                         return false;
     if (nameFilter && (r.name || '') !== nameFilter)                             return false;
