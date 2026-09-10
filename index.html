@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.3.6 | 2026-09-11 -->
+     Build: v1.3.7 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.6</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.7</span>
     </div>
   </aside>
 
@@ -8634,6 +8634,11 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
   // Rule 0 — Emergency leave on either side: exempt
   if (ilcActList.indexOf('EMPL') !== -1 || mBase === 'Emergency') {
     return { variance: 'No', reason: 'Emergency leave — exempt' };
+  }
+
+  // Rule 0.5 — Monday is Rest Day: scheduled day off, never a variance
+  if (mBase === 'Rest Day') {
+    return { variance: 'No', reason: '' };
   }
 
   // ── BRANCH A: ILC = GB only (pure work day, no leave) ────────────────────
