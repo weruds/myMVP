@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.3.4 | 2026-09-10 -->
+     Build: v1.3.5 | 2026-09-10 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3411,7 +3411,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.4</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.5</span>
     </div>
   </aside>
 
@@ -3773,6 +3773,7 @@
           <option>July</option><option>August</option><option>September</option>
           <option>October</option><option>November</option><option>December</option>
         </select>
+        <select id="wfh-var-sl"       onchange="filterWfhVariance()"><option value="">Service Line (All)</option></select>
         <select id="wfh-var-name"     onchange="filterWfhVariance()"><option value="">Name (All)</option></select>
         <select id="wfh-var-serial"   onchange="filterWfhVariance()"><option value="">IBM Serial No. (All)</option></select>
         <select id="wfh-var-variance" onchange="filterWfhVariance()">
@@ -3826,6 +3827,7 @@
       <div class="page-toolbar">
         <select id="ilc-var-year"   onchange="_onIlcVarYearChange()"><option value="">Year</option></select>
         <select id="ilc-var-month"  onchange="filterIlcVariance()"><option value="">Month</option></select>
+        <select id="ilc-var-sl"     onchange="filterIlcVariance()"><option value="">Service Line (All)</option></select>
         <select id="ilc-var-name"   onchange="filterIlcVariance()"><option value="">Name (All)</option></select>
         <select id="ilc-var-serial" onchange="filterIlcVariance()"><option value="">IBM Serial No. (All)</option></select>
         <input type="text" id="ilc-var-search" placeholder="Search name or serial…" oninput="filterIlcVariance()" />
@@ -5400,6 +5402,9 @@ function loadMasterlist(forceServer) {
     _masterlistRecords = [];
     snap.forEach(function(d) { _masterlistRecords.push(Object.assign({ _id: d.id }, d.data())); });
     _renderMasterlist();
+    // Rebuild serial→service-line map and refresh variance page SL dropdowns
+    _rebuildSerialSlMap();
+    _ensureServiceLineCache();
   }).catch(function(err) {
     tbody.innerHTML = '<tr><td colspan="6" style="color:var(--danger);padding:16px;">Error loading masterlist.</td></tr>';
     console.error(err);
@@ -6472,6 +6477,9 @@ function loadMondayAttendance(forceServer) {
     _renderMondayAtt();
     // Keep the Monday-vs-ILC variance filters in sync
     _populateIlcVarYearMonth();
+    // Rebuild serial→service-line map with Monday "group" as fallback
+    _rebuildSerialSlMap();
+    _ensureServiceLineCache();
   }).catch(function(err) { console.error(err); });
 }
 
@@ -7718,6 +7726,73 @@ function _renderDiscrepancyList() {
 // ── MONDAY vs WFH SCHEDULE (Sub-Task 7)
 // ──────────────────────────────────────────────
 
+// ── Shared service-line infrastructure for both variance pages ───────────────
+// _serviceLineCache: [{code, name}] loaded once from Firestore serviceLines
+// _serialToServiceLine: ibmSerialNo (uppercase) → serviceLine code string
+var _serviceLineCache      = [];
+var _serialToServiceLine   = {};
+
+// Build / rebuild the serial→serviceLine lookup from whichever sources are loaded.
+// Called after masterlist or Monday-att loads (whichever happens last).
+function _rebuildSerialSlMap() {
+  _serialToServiceLine = {};
+  // Masterlist is the authoritative source (field: serviceLine)
+  if (typeof _masterlistRecords !== 'undefined') {
+    _masterlistRecords.forEach(function(r) {
+      var sn = (r.ibmSerialNo || '').toUpperCase().trim();
+      var sl = (r.serviceLine || '').trim();
+      if (sn && sl) _serialToServiceLine[sn] = sl;
+    });
+  }
+  // Monday attendance fills gaps (field: group)
+  if (typeof _mondayAttRecords !== 'undefined') {
+    _mondayAttRecords.forEach(function(r) {
+      var sn = (r.ibmSerialNo || '').toUpperCase().trim();
+      var sl = (r.group || '').trim();
+      if (sn && sl && !_serialToServiceLine[sn]) _serialToServiceLine[sn] = sl;
+    });
+  }
+}
+
+// Populate both variance-page Service Line dropdowns from _serviceLineCache.
+// Preserves the currently-selected value in each.
+function _populateVarianceSlDropdowns() {
+  ['wfh-var-sl', 'ilc-var-sl'].forEach(function(id) {
+    var sel = document.getElementById(id);
+    if (!sel) return;
+    var prev = sel.value;
+    var opts = '<option value="">Service Line (All)</option>';
+    _serviceLineCache.forEach(function(sl) {
+      opts += '<option value="' + escapeHtml(sl.code) + '"' +
+              (sl.code === prev ? ' selected' : '') + '>' +
+              escapeHtml(sl.code) + (sl.name ? ' \u2013 ' + escapeHtml(sl.name) : '') +
+              '</option>';
+    });
+    sel.innerHTML = opts;
+  });
+}
+
+// Load serviceLines from Firestore once; afterwards populate the dropdowns.
+// Safe to call multiple times — skips the fetch if cache is already filled.
+function _ensureServiceLineCache(callback) {
+  if (_serviceLineCache.length) {
+    _populateVarianceSlDropdowns();
+    if (callback) callback();
+    return;
+  }
+  if (!_fbDb) return;
+  _fbDb.collection('serviceLines').orderBy('code').get().then(function(snap) {
+    _serviceLineCache = [];
+    snap.forEach(function(d) {
+      var sl = d.data();
+      if (sl.code) _serviceLineCache.push({ code: sl.code, name: sl.name || '' });
+    });
+    _populateVarianceSlDropdowns();
+    if (callback) callback();
+  }).catch(function(err) { console.error('_ensureServiceLineCache:', err); });
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 var _wfhVarianceRecords = [];
 // Set of Firestore doc IDs that the admin has toggled "Tag Variance" for in this session
 var _wfhTaggedIds = new Set();
@@ -7815,6 +7890,7 @@ function loadWfhVariance(forceServer) {
     _populateYearDropdown('wfh-var-year',   _wfhVarianceRecords);
     _populateFilterDropdown('wfh-var-name',   _wfhVarianceRecords, 'name',        'Name (All)');
     _populateFilterDropdown('wfh-var-serial', _wfhVarianceRecords, 'ibmSerialNo', 'IBM Serial No. (All)');
+    _ensureServiceLineCache();
     _renderWfhVariance();
     if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '↻ Refresh'; }
   }).catch(function(err) {
@@ -7859,6 +7935,7 @@ function _renderWfhVariance() {
   if (!tbody) return;
   var year     = (document.getElementById('wfh-var-year')     || {}).value || '';
   var month    = (document.getElementById('wfh-var-month')    || {}).value || '';
+  var sl       = (document.getElementById('wfh-var-sl')       || {}).value || '';
   var name     = (document.getElementById('wfh-var-name')     || {}).value || '';
   var serial   = (document.getElementById('wfh-var-serial')   || {}).value || '';
   var variance = (document.getElementById('wfh-var-variance') || {}).value || '';
@@ -7875,6 +7952,10 @@ function _renderWfhVariance() {
     if (_wfhVarianceLabel(r) === 'No Variance') return false;
     if (year     && String(r.year  || (r.date || '').substring(0,4)) !== year)  return false;
     if (month    && (r.month || '') !== month)                                   return false;
+    if (sl) {
+      var recSl = (r.serviceLine || _serialToServiceLine[(r.ibmSerialNo || '').toUpperCase().trim()] || '');
+      if (recSl !== sl) return false;
+    }
     if (name     && (r.name  || '') !== name)                                    return false;
     if (serial   && (r.ibmSerialNo || '') !== serial)                            return false;
     if (variance && _wfhVarianceLabel(r) !== variance)                           return false;
@@ -8664,6 +8745,7 @@ function loadIlcVariance(forceServer) {
     _populateIlcVarYearMonth();
     _populateFilterDropdown('ilc-var-name',   _ilcVarianceRecords, 'name',        'Name (All)');
     _populateFilterDropdown('ilc-var-serial', _ilcVarianceRecords, 'ibmSerialNo', 'IBM Serial No. (All)');
+    _ensureServiceLineCache();
     _renderIlcVariance();
     if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '↻ Refresh'; }
   }).catch(function(err) {
@@ -8683,12 +8765,17 @@ function _renderIlcVariance() {
   if (!tbody) return;
   var year   = (document.getElementById('ilc-var-year')   || {}).value || '';
   var month  = (document.getElementById('ilc-var-month')  || {}).value || '';
+  var sl     = (document.getElementById('ilc-var-sl')     || {}).value || '';
   var name   = (document.getElementById('ilc-var-name')   || {}).value || '';
   var serial = (document.getElementById('ilc-var-serial') || {}).value || '';
   var search = ((document.getElementById('ilc-var-search') || {}).value || '').toLowerCase().trim();
   var filtered = _ilcVarianceRecords.filter(function(r) {
     if (year   && String(r.year  || (r.weekending || '').substring(0,4)) !== year)  return false;
     if (month  && (r.month || '') !== month)                                          return false;
+    if (sl) {
+      var recSl = (r.serviceLine || _serialToServiceLine[(r.ibmSerialNo || '').toUpperCase().trim()] || '');
+      if (recSl !== sl) return false;
+    }
     if (name   && (r.name  || '') !== name)                                           return false;
     if (serial && (r.ibmSerialNo || '') !== serial)                                   return false;
     if (search && !(r.name || '').toLowerCase().includes(search) &&
