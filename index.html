@@ -8586,6 +8586,7 @@ async function detectIlcVariances() {
     // same ibmSerialNo+date key (e.g. a prior report whose last week overlaps the
     // next month) would contaminate the lookup and produce ghost variances.
     var mondayMapAll = {};
+    var _mondaySeenStatusKey = {};   // dedup by serial+date+status — mirrors _renderMondayAtt
     mondaySnap.forEach(function(d) {
       var r = d.data();
       // Skip records that belong to a different year or month than what we're detecting
@@ -8597,6 +8598,10 @@ async function detectIlcVariances() {
         var rm = r.month || '';
         if (rm !== month) return;
       }
+      // Deduplicate: same person+date+status from multiple uploads → keep only one
+      var statusDedupKey = (r.ibmSerialNo || '') + '|' + (r.date || '') + '|' + (r.status || '');
+      if (_mondaySeenStatusKey[statusDedupKey]) return;
+      _mondaySeenStatusKey[statusDedupKey] = true;
       var key = (r.ibmSerialNo || '') + '_' + (r.date || '');
       if (!mondayMapAll[key]) mondayMapAll[key] = [];
       mondayMapAll[key].push(r);
@@ -8732,11 +8737,15 @@ async function detectIlcVariances() {
         if (anyPass) continue;  // at least one Monday record reconciles — no variance
 
         // Every Monday record for this date produced a variance.
-        // Write one variance row per failing Monday record so the reviewer sees
-        // exactly which status/duration combinations don't match the ILC.
+        // Write one row per unique status+duration combination — avoids duplicates
+        // when the same status appears in more than one Firestore document.
+        var _seenVarianceCombo = {};
         for (var fi = 0; fi < failedResults.length; fi++) {
           var failRec    = failedResults[fi].rec;
           var failReason = failedResults[fi].reason;
+          var _comboKey  = (failRec.status || '') + '||' + (failRec.duration || '');
+          if (_seenVarianceCombo[_comboKey]) continue;
+          _seenVarianceCombo[_comboKey] = true;
           var docRef = _fbDb.collection('ilcMondayVariances').doc();
           batch.set(docRef, {
             ibmSerialNo:    serial,
