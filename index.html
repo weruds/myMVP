@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.3.3 | 2026-09-10 -->
+     Build: v1.3.4 | 2026-09-10 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3341,6 +3341,19 @@
         </div>
       </div>
 
+      <!-- DISCREPANCY LIST entity (auditor — view + notify only, no detect/clear) -->
+      <div class="nav-section" id="auditor-variance-nav-section" style="display:none;">
+        <div class="nav-label">Discrepancy List</div>
+        <div class="nav-parent" id="nav-parent-detect-aud" onclick="toggleNavParent('detect-aud')">
+          <span class="nav-icon">🔍</span> Detect Variances
+          <span class="nav-chevron">▾</span>
+        </div>
+        <div class="nav-sub-list" id="nav-sub-detect-aud">
+          <div class="nav-sub-item" data-page="wfh-variance">Monday vs WFH Schedule</div>
+          <div class="nav-sub-item" data-page="ilc-variance">Monday vs ILC</div>
+        </div>
+      </div>
+
       <!-- ATTENDANCE entity (admin-only) -->
       <div class="nav-section" id="attendance-nav-section" style="display:none;">
         <div class="nav-label">Attendance</div>
@@ -3398,7 +3411,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.3</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.4</span>
     </div>
   </aside>
 
@@ -3745,8 +3758,8 @@
           <div class="section-subtitle">Detect WFH compliance variances between Monday.com attendance and employee WFH schedules.</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <button class="btn btn-primary btn-sm" id="wfh-detect-btn" onclick="detectWfhVariances()">🔍 Detect Variances</button>
-          <button class="btn btn-danger btn-sm"  id="wfh-clear-btn"  onclick="clearWfhVariances()">🗑 Clear Variances</button>
+          <button class="btn btn-primary btn-sm admin-only-btn" id="wfh-detect-btn" onclick="detectWfhVariances()">🔍 Detect Variances</button>
+          <button class="btn btn-danger btn-sm  admin-only-btn" id="wfh-clear-btn"  onclick="clearWfhVariances()">🗑 Clear Variances</button>
           <button class="btn btn-ghost btn-sm"   id="wfh-notify-btn" onclick="notifyWfhVariances()">📧 Notify Employees</button>
           <button class="btn btn-ghost btn-sm"   id="wfh-refresh-btn" onclick="loadWfhVariance(true)">↻ Refresh</button>
         </div>
@@ -3804,10 +3817,10 @@
           <div class="section-subtitle">Detect variances between Monday.com attendance and ILC clockings.</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <button class="btn btn-primary btn-sm" id="ilc-detect-btn"  onclick="detectIlcVariances()">🔍 Detect Variances</button>
-          <button class="btn btn-danger btn-sm"  id="ilc-clear-btn"   onclick="clearIlcVariances()">🗑 Clear Variances</button>
-          <button class="btn btn-ghost btn-sm"   id="ilc-notify-btn"  onclick="notifyIlcVariances()">📧 Notify Employees</button>
-          <button class="btn btn-ghost btn-sm"   id="ilc-refresh-btn" onclick="loadIlcVariance(true)">↻ Refresh</button>
+          <button class="btn btn-primary btn-sm admin-only-btn" id="ilc-detect-btn"  onclick="detectIlcVariances()">🔍 Detect Variances</button>
+          <button class="btn btn-danger btn-sm  admin-only-btn" id="ilc-clear-btn"   onclick="clearIlcVariances()">🗑 Clear Variances</button>
+          <button class="btn btn-ghost btn-sm"                  id="ilc-notify-btn"  onclick="notifyIlcVariances()">📧 Notify Employees</button>
+          <button class="btn btn-ghost btn-sm"                  id="ilc-refresh-btn" onclick="loadIlcVariance(true)">↻ Refresh</button>
         </div>
       </div>
       <div class="page-toolbar">
@@ -3825,9 +3838,16 @@
               <th>Date (Weekending)</th><th>Date</th><th>ILC Activity</th><th>ILC Clocking</th>
               <th>Monday Status</th><th>Monday Duration</th>
               <th>Variance</th><th>Variance Reason</th>
+              <th style="text-align:center;">
+                <label class="vt-toggle" title="Tag / untag all visible rows" style="cursor:pointer;display:inline-block;">
+                  <input type="checkbox" id="ilc-tag-all-chk" onchange="_toggleAllIlcTags(this)">
+                  <span class="vt-slider"></span>
+                </label>
+                <div style="font-size:10px;color:var(--muted);margin-top:3px;font-weight:700;letter-spacing:0.4px;">TAG ALL</div>
+              </th>
             </tr></thead>
             <tbody id="ilc-var-tbody">
-              <tr><td colspan="11" style="text-align:center;color:var(--muted);padding:32px;">Click "Detect Variances" to analyse records for the selected month.</td></tr>
+              <tr><td colspan="12" style="text-align:center;color:var(--muted);padding:32px;">Click "Detect Variances" to analyse records for the selected month.</td></tr>
             </tbody>
           </table>
         </div>
@@ -4713,12 +4733,18 @@ function handleAuthState(user) {
     // Show admin nav sections for admins
     var isAdmin   = role === 'admin';
     var isAuditor = role === 'audit';
-    document.getElementById('admin-nav-section').style.display              = isAdmin   ? '' : 'none';
-    document.getElementById('discrepancy-nav-section').style.display        = isAdmin   ? '' : 'none';
-    document.getElementById('attendance-nav-section').style.display         = isAdmin   ? '' : 'none';
-    document.getElementById('auditor-nav-section').style.display            = isAuditor ? '' : 'none';
-    document.getElementById('auditor-attendance-nav-section').style.display = isAuditor ? '' : 'none';
-    document.getElementById('master-sync-btn-wrap').style.display           = isAdmin   ? '' : 'none';
+    document.getElementById('admin-nav-section').style.display                  = isAdmin            ? '' : 'none';
+    document.getElementById('discrepancy-nav-section').style.display            = isAdmin            ? '' : 'none';
+    document.getElementById('attendance-nav-section').style.display             = isAdmin            ? '' : 'none';
+    document.getElementById('auditor-nav-section').style.display                = isAuditor          ? '' : 'none';
+    document.getElementById('auditor-attendance-nav-section').style.display     = isAuditor          ? '' : 'none';
+    document.getElementById('auditor-variance-nav-section').style.display       = isAuditor          ? '' : 'none';
+    document.getElementById('master-sync-btn-wrap').style.display               = isAdmin            ? '' : 'none';
+    // Admin-only buttons (Detect + Clear Variances on both variance pages)
+    var adminBtns = document.querySelectorAll('.admin-only-btn');
+    for (var _bi = 0; _bi < adminBtns.length; _bi++) {
+      adminBtns[_bi].style.display = isAdmin ? '' : 'none';
+    }
     if (isAdmin) populateOnboardServiceLineDropdown();
     if (_authProfile.mustChangePassword) {
       document.getElementById('auth-modal-title').textContent = 'Update your password';
@@ -7963,6 +7989,7 @@ function _syncTagAllCheckbox() {
 
 async function detectWfhVariances() {
   if (!_fbDb) return;
+  if (!_authProfile || _authProfile.role !== 'admin') { showToast('Admin access required.', '🔒'); return; }
   var year  = (document.getElementById('wfh-var-year')  || {}).value || '';
   var month = (document.getElementById('wfh-var-month') || {}).value || '';
 
@@ -8168,6 +8195,7 @@ async function detectWfhVariances() {
 
 async function clearWfhVariances() {
   if (!_fbDb) return;
+  if (!_authProfile || _authProfile.role !== 'admin') { showToast('Admin access required.', '🔒'); return; }
   var year  = (document.getElementById('wfh-var-year')  || {}).value || '';
   var month = (document.getElementById('wfh-var-month') || {}).value || '';
   var label = (year && month) ? month + ' ' + year : 'all records';
@@ -8646,6 +8674,10 @@ function loadIlcVariance(forceServer) {
 
 function filterIlcVariance() { _renderIlcVariance(); }
 
+// ── ILC variance tag set (mirrors _wfhTaggedIds pattern) ────────────────────
+var _ilcTaggedIds   = new Set();
+var _ilcFilteredIds = [];   // doc IDs of the currently-visible rows
+
 function _renderIlcVariance() {
   var tbody = document.getElementById('ilc-var-tbody');
   if (!tbody) return;
@@ -8669,14 +8701,22 @@ function _renderIlcVariance() {
     if (tDiff !== 0) return tDiff;
     return _lastNameKey(a.name) < _lastNameKey(b.name) ? -1 : 1;
   });
+  // Track filtered IDs for TAG ALL sync
+  _ilcFilteredIds = filtered.map(function(r) { return r._id || ''; });
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:32px;">No records match the selected filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:32px;">No records match the selected filters.</td></tr>';
+    _syncIlcTagAllCheckbox();
     return;
   }
   tbody.innerHTML = filtered.map(function(r) {
     var vBadge = r.variance === 'Yes'
       ? '<span class="tag" style="background:rgba(248,113,113,0.10);color:#f87171;border-color:rgba(248,113,113,0.30);font-size:11px;">Yes</span>'
       : '<span class="tag" style="background:rgba(74,222,128,0.08);color:#4ade80;border-color:rgba(74,222,128,0.25);font-size:11px;">No</span>';
+    var docId   = escapeHtml(r._id || '');
+    var checked = _ilcTaggedIds.has(r._id || '') ? ' checked' : '';
+    var toggle  = '<label class="vt-toggle" title="Tag this variance for notification" style="cursor:pointer;">' +
+                  '<input type="checkbox"' + checked + ' onchange="_toggleIlcTag(\'' + docId + '\',this)">' +
+                  '<span class="vt-slider"></span></label>';
     return '<tr>' +
       '<td>' + escapeHtml(r.ibmSerialNo    || '') + '</td>' +
       '<td>' + escapeHtml(r.name           || '') + '</td>' +
@@ -8689,12 +8729,42 @@ function _renderIlcVariance() {
       '<td>' + escapeHtml(r.mondayDuration || '') + '</td>' +
       '<td style="text-align:center;">' + vBadge + '</td>' +
       '<td>' + escapeHtml(r.varianceReason || '') + '</td>' +
+      '<td style="text-align:center;">' + toggle + '</td>' +
       '</tr>';
   }).join('');
+  _syncIlcTagAllCheckbox();
+}
+
+// Toggle a single row in the ILC tag set
+function _toggleIlcTag(docId, checkbox) {
+  if (!docId) return;
+  if (checkbox.checked) { _ilcTaggedIds.add(docId); } else { _ilcTaggedIds.delete(docId); }
+  _syncIlcTagAllCheckbox();
+}
+
+// Toggle all currently-visible rows
+function _toggleAllIlcTags(checkbox) {
+  var tag = checkbox.checked;
+  _ilcFilteredIds.forEach(function(id) {
+    if (tag) { _ilcTaggedIds.add(id); } else { _ilcTaggedIds.delete(id); }
+  });
+  _renderIlcVariance();
+}
+
+// Keep the header TAG ALL checkbox in sync with individual row states
+function _syncIlcTagAllCheckbox() {
+  var chk = document.getElementById('ilc-tag-all-chk');
+  if (!chk || !_ilcFilteredIds.length) return;
+  var allTagged  = _ilcFilteredIds.every(function(id) { return _ilcTaggedIds.has(id); });
+  var noneTagged = _ilcFilteredIds.every(function(id) { return !_ilcTaggedIds.has(id); });
+  chk.checked       = allTagged;
+  chk.indeterminate = !allTagged && !noneTagged;
 }
 
 async function detectIlcVariances() {
   if (!_fbDb) return;
+  // Admin guard
+  if (!_authProfile || _authProfile.role !== 'admin') { showToast('Admin access required.', '🔒'); return; }
   var year  = (document.getElementById('ilc-var-year')  || {}).value || '';
   var month = (document.getElementById('ilc-var-month') || {}).value || '';
 
@@ -9116,6 +9186,7 @@ async function detectIlcVariances() {
 
 async function clearIlcVariances() {
   if (!_fbDb) return;
+  if (!_authProfile || _authProfile.role !== 'admin') { showToast('Admin access required.', '🔒'); return; }
   var year  = (document.getElementById('ilc-var-year')  || {}).value || '';
   var month = (document.getElementById('ilc-var-month') || {}).value || '';
   var label = (year && month) ? month + ' ' + year : 'all records';
@@ -9165,13 +9236,116 @@ async function clearIlcVariances() {
   }
 }
 
-function notifyIlcVariances() {
+async function notifyIlcVariances() {
   var notifyBtn = document.getElementById('ilc-notify-btn');
-  if (notifyBtn) { notifyBtn.disabled = true; notifyBtn.textContent = '⏳ Saving…'; }
-  showToast('Variances saved — employees can view them under My Variances.', 'ℹ️');
-  setTimeout(function() {
+  if (notifyBtn) { notifyBtn.disabled = true; notifyBtn.textContent = '⏳ Sending…'; }
+
+  // Build the filtered list the same way _renderIlcVariance does
+  var year   = (document.getElementById('ilc-var-year')   || {}).value || '';
+  var month  = (document.getElementById('ilc-var-month')  || {}).value || '';
+  var name   = (document.getElementById('ilc-var-name')   || {}).value || '';
+  var serial = (document.getElementById('ilc-var-serial') || {}).value || '';
+  var search = ((document.getElementById('ilc-var-search') || {}).value || '').toLowerCase().trim();
+  var filtered = _ilcVarianceRecords.filter(function(r) {
+    if (year   && String(r.year  || (r.weekending || '').substring(0,4)) !== year)  return false;
+    if (month  && (r.month || '') !== month)                                          return false;
+    if (name   && (r.name  || '') !== name)                                           return false;
+    if (serial && (r.ibmSerialNo || '') !== serial)                                   return false;
+    if (search && !(r.name || '').toLowerCase().includes(search) &&
+                  !(r.ibmSerialNo || '').toLowerCase().includes(search))              return false;
+    return true;
+  });
+
+  // Only keep tagged records
+  var tagged = filtered.filter(function(r) { return _ilcTaggedIds.has(r._id || ''); });
+  if (!tagged.length) {
+    showToast('No tagged variances. Toggle "Tag Variance" on the rows you want to send.', '⚠️');
     if (notifyBtn) { notifyBtn.disabled = false; notifyBtn.textContent = '📧 Notify Employees'; }
-  }, 1500);
+    return;
+  }
+
+  // Build email → uid lookup from the users collection
+  var usersSnap = await _fbDb.collection('users').get().catch(function(e) {
+    showToast('Could not load user accounts: ' + (e.message || e), '❌');
+    return null;
+  });
+  if (!usersSnap) {
+    if (notifyBtn) { notifyBtn.disabled = false; notifyBtn.textContent = '📧 Notify Employees'; }
+    return;
+  }
+
+  var emailToUid  = {};
+  var serialToUid = {};
+  usersSnap.forEach(function(d) {
+    var u = d.data();
+    if (u.email)       emailToUid[(u.email || '').toLowerCase().trim()] = d.id;
+    if (u.talentId)    serialToUid[(u.talentId || '').toUpperCase().trim()] = d.id;
+    if (u.ibmSerialNo) serialToUid[(u.ibmSerialNo || '').toUpperCase().trim()] = d.id;
+  });
+
+  // Group tagged records by employee email
+  var byEmail = {};
+  tagged.forEach(function(r) {
+    var email = (r.email || '').toLowerCase().trim();
+    if (!email) return;
+    if (!byEmail[email]) byEmail[email] = [];
+    byEmail[email].push(r);
+  });
+
+  if (!Object.keys(byEmail).length) {
+    showToast('Tagged rows have no email addresses — cannot notify.', '⚠️');
+    if (notifyBtn) { notifyBtn.disabled = false; notifyBtn.textContent = '📧 Notify Employees'; }
+    return;
+  }
+
+  // Write a myVariances doc per employee
+  var ts = firebase.firestore.FieldValue.serverTimestamp();
+  var batch = _fbDb.batch();
+  var count = 0;
+  var BATCH_LIMIT = 490;
+
+  for (var email in byEmail) {
+    var uid = emailToUid[email];
+    if (!uid) {
+      var firstRec = byEmail[email][0];
+      uid = serialToUid[(firstRec.ibmSerialNo || '').toUpperCase().trim()] || null;
+    }
+    if (!uid) continue;
+
+    byEmail[email].forEach(function(r) {
+      var docRef = _fbDb.collection('myVariances').doc();
+      batch.set(docRef, {
+        uid:            uid,
+        email:          email,
+        ibmSerialNo:    r.ibmSerialNo    || '',
+        name:           r.name           || '',
+        date:           r.date           || '',
+        weekending:     r.weekending     || '',
+        ilcActivity:    r.ilcActivity    || '',
+        ilcClocking:    r.ilcClocking    != null ? r.ilcClocking : '',
+        mondayStatus:   r.mondayStatus   || '',
+        mondayDuration: r.mondayDuration || '',
+        variance:       r.variance       || '',
+        varianceReason: r.varianceReason || '',
+        type:           'ILC',
+        month:          r.month  || '',
+        year:           r.year   || '',
+        sentAt:         ts
+      });
+      count++;
+      // Commit mid-batch if needed
+    });
+
+    if (count >= BATCH_LIMIT) {
+      await batch.commit().catch(function(e) { console.error(e); });
+      batch = _fbDb.batch();
+      count = 0;
+    }
+  }
+  if (count > 0) await batch.commit().catch(function(e) { console.error(e); });
+
+  showToast(tagged.length + ' variance(s) sent to employees under My Variances.', '✅');
+  if (notifyBtn) { notifyBtn.disabled = false; notifyBtn.textContent = '📧 Notify Employees'; }
 }
 
 // ──────────────────────────────────────────────
