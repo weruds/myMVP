@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.3.8 | 2026-09-11 -->
+     Build: v1.3.9 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.8</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.9</span>
     </div>
   </aside>
 
@@ -5408,6 +5408,30 @@ async function deleteServiceLine(docId, btn) {
 // ── ADMIN: MASTERLIST
 // ──────────────────────────────────────────────
 var _masterlistRecords = [];
+var _masterlistSlLoading = false;
+
+// Silently fetch masterlist to populate _serialToServiceLine if not already loaded.
+// Used by variance pages so the SL filter works without visiting the Masterlist page.
+function _ensureMasterlistForSlMap(callback) {
+  if (_masterlistRecords.length) {
+    _rebuildSerialSlMap();
+    if (callback) callback();
+    return;
+  }
+  if (_masterlistSlLoading) return;
+  _masterlistSlLoading = true;
+  if (!_fbDb) return;
+  _fbDb.collection('masterlist').get().then(function(snap) {
+    _masterlistRecords = [];
+    snap.forEach(function(d) { _masterlistRecords.push(Object.assign({ _id: d.id }, d.data())); });
+    _masterlistSlLoading = false;
+    _rebuildSerialSlMap();
+    if (callback) callback();
+  }).catch(function(err) {
+    _masterlistSlLoading = false;
+    console.error('_ensureMasterlistForSlMap:', err);
+  });
+}
 
 function loadMasterlist(forceServer) {
   if (!_fbDb) return;
@@ -7909,7 +7933,7 @@ function loadWfhVariance(forceServer) {
     _populateFilterDropdown('wfh-var-name',   _wfhVarianceRecords, 'name',        'Name (All)');
     _populateFilterDropdown('wfh-var-serial', _wfhVarianceRecords, 'ibmSerialNo', 'IBM Serial No. (All)');
     _ensureServiceLineCache();
-    _renderWfhVariance();
+    _ensureMasterlistForSlMap(function() { _renderWfhVariance(); });
     if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '↻ Refresh'; }
   }).catch(function(err) {
     console.error(err);
@@ -8800,7 +8824,7 @@ function loadIlcVariance(forceServer) {
     _populateFilterDropdown('ilc-var-name',   _ilcVarianceRecords, 'name',        'Name (All)');
     _populateFilterDropdown('ilc-var-serial', _ilcVarianceRecords, 'ibmSerialNo', 'IBM Serial No. (All)');
     _ensureServiceLineCache();
-    _renderIlcVariance();
+    _ensureMasterlistForSlMap(function() { _renderIlcVariance(); });
     if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '↻ Refresh'; }
   }).catch(function(err) {
     console.error(err);
