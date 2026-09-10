@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.3.7 | 2026-09-11 -->
+     Build: v1.3.8 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.7</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.8</span>
     </div>
   </aside>
 
@@ -8092,6 +8092,7 @@ async function detectWfhVariances() {
   var year  = (document.getElementById('wfh-var-year')  || {}).value || '';
   var month = (document.getElementById('wfh-var-month') || {}).value || '';
 
+  _rebuildSerialSlMap();
   var detectBtn = document.getElementById('wfh-detect-btn');
   if (detectBtn) { detectBtn.disabled = true; detectBtn.textContent = '⏳ Processing…'; }
   showToast('Detecting variances…', '🔍');
@@ -8258,6 +8259,7 @@ async function detectWfhVariances() {
           ibmSerialNo:       r.ibmSerialNo || '',
           name:              r.name        || '',
           email:             r.email       || '',
+          serviceLine:       r.group || _serialToServiceLine[(r.ibmSerialNo || '').toUpperCase().trim()] || '',
           wfhDay1:           wfh.day1,
           wfhDay2:           wfh.day2,
           date:              dateStr,
@@ -8907,6 +8909,7 @@ async function detectIlcVariances() {
   var year  = (document.getElementById('ilc-var-year')  || {}).value || '';
   var month = (document.getElementById('ilc-var-month') || {}).value || '';
 
+  _rebuildSerialSlMap();
   var detectBtn = document.getElementById('ilc-detect-btn');
   if (detectBtn) { detectBtn.disabled = true; detectBtn.textContent = '⏳ Processing…'; }
   showToast('Detecting ILC variances…', '🔍');
@@ -9275,6 +9278,7 @@ async function detectIlcVariances() {
         ibmSerialNo:    entry.serial,
         name:           entry.name,
         email:          entry.email,
+        serviceLine:    _serialToServiceLine[(entry.serial || '').toUpperCase().trim()] || '',
         weekending:     entry.weekending,
         date:           entry.date,
         dayOfWeek:      entry.dayOfWeek,
