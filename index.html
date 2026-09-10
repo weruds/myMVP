@@ -8403,12 +8403,26 @@ async function detectIlcVariances() {
     var mondaySnap = results[1];
     console.log('[ILC Detect] monthlyAttendance docs:', ilcSnap.size, '| mondayAttendance docs:', mondaySnap.size);
 
-    // Build Monday lookup map: "ibmSerialNo_YYYY-MM-DD" → mondayRecord (all records)
+    // Build Monday lookup map: "ibmSerialNo_YYYY-MM-DD" → mondayRecord
+    // When multiple docs exist for the same serial+date (e.g. duplicates from
+    // Monday.com exports), prefer the authoritative attendance record over
+    // rest/leave records using a priority score. Highest score wins.
+    function _mondayStatusPriority(status) {
+      var b = _statusBaseType((status || '').trim());
+      if (b === 'Office')              return 5;
+      if (b === 'Remote (Scheduled)')  return 4;
+      if (b === 'Remote (Unscheduled)' || b === 'Unscheduled') return 3;
+      if (b === 'CDO')                 return 2;
+      if (b === '')                    return 0;
+      return 1; // Rest Day, Sick, Vacation, Holiday, etc.
+    }
     var mondayMap = {};
     mondaySnap.forEach(function(d) {
       var r = d.data();
       var key = (r.ibmSerialNo || '') + '_' + (r.date || '');
-      mondayMap[key] = r;
+      if (!mondayMap[key] || _mondayStatusPriority(r.status) > _mondayStatusPriority(mondayMap[key].status)) {
+        mondayMap[key] = r;
+      }
     });
     console.log('[ILC Detect] mondayMap keys:', Object.keys(mondayMap).length);
     // Log a sample Monday key so we can verify the format
