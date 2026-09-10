@@ -8309,13 +8309,13 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
 
   // Rule 3 — GB=9 but Monday is a leave status
   if (hasGB && ilcMonHrs === 9 && mBase !== '' && mBase !== 'Office' &&
-      mBase !== 'Remote (Scheduled)' && mBase !== 'Unscheduled') {
+      mBase !== 'Remote (Scheduled)' && mBase !== 'Remote (Unscheduled)' && mBase !== 'Unscheduled') {
     return { variance: 'Yes', reason: 'ILC GB/9h but Monday is leave: ' + mStatus };
   }
 
   // Rule 1 — GB=9, Monday must be Office/Remote
   if (hasGB && ilcMonHrs === 9) {
-    if (mBase === 'Office' || mBase === 'Remote (Scheduled)' || mBase === 'Unscheduled') {
+    if (mBase === 'Office' || mBase === 'Remote (Scheduled)' || mBase === 'Remote (Unscheduled)' || mBase === 'Unscheduled') {
       return { variance: 'No', reason: '' };
     }
     return { variance: 'Yes', reason: 'ILC GB/9h but Monday is: ' + mStatus };
@@ -8455,12 +8455,16 @@ async function detectIlcVariances() {
     // rest/leave records using a priority score. Highest score wins.
     function _mondayStatusPriority(status) {
       var b = _statusBaseType((status || '').trim());
-      if (b === 'Office')              return 5;
-      if (b === 'Remote (Scheduled)')  return 4;
-      if (b === 'Remote (Unscheduled)' || b === 'Unscheduled') return 3;
-      if (b === 'CDO')                 return 2;
+      if (b === 'Office')              return 6;
+      if (b === 'Remote (Scheduled)')  return 5;
+      if (b === 'Remote (Unscheduled)' || b === 'Unscheduled') return 4;
+      if (b === 'CDO')                 return 3;
+      // Actual leave types (Sick, Vacation, Holiday) outrank Rest Day so that
+      // when both exist for the same person+date, the leave record wins.
+      if (b === 'Sick' || b === 'Vacation' || b === 'Holiday') return 2;
+      if (b === 'Rest Day')            return 1;
       if (b === '')                    return 0;
-      return 1; // Rest Day, Sick, Vacation, Holiday, etc.
+      return 1; // anything else
     }
     var mondayMap = {};
     mondaySnap.forEach(function(d) {
@@ -8539,11 +8543,30 @@ async function detectIlcVariances() {
         var dayIlcRec = Object.assign({}, r);
         // Override the per-day hours so the rule engine sees this day's value as "monday"
         dayIlcRec.monday = dayHrs;
-        // Use activityByDay for this specific day if available
-        if (r.activityByDay && r.activityByDay[dayKey]) {
+        // Use activityByDay for this specific day if available — and derive
+        // the day-specific activity string so the rule engine doesn't pick up
+        // leave codes that belong to OTHER days of the same week.
+        if (r.activityByDay && r.activityByDay[dayKey] && r.activityByDay[dayKey].length) {
           dayIlcRec.activityByDay = { monday: r.activityByDay[dayKey] };
+          // Rebuild activity from the per-day codes only (e.g. a pure-GB day
+          // on a GB,VL week must NOT inherit VL from the week-level field)
+          dayIlcRec.activity = r.activityByDay[dayKey]
+            .map(function(e) { return (typeof e === 'object' ? e.code : e || '').trim().toUpperCase(); })
+            .filter(Boolean)
+            .join(', ');
         } else {
           dayIlcRec.activityByDay = {};
+          // activityByDay missing — fall back to week-level activity only when
+          // there is a single code; if multiple codes exist (e.g. "GB, VL") and
+          // we have no per-day breakdown, we cannot safely attribute a leave code
+          // to this specific day, so strip all leave codes and keep only GB.
+          var weekCodes = (r.activity || '').toUpperCase().split(',').map(function(a) { return a.trim(); }).filter(Boolean);
+          if (weekCodes.length > 1) {
+            // Multi-activity week without per-day data: treat this day as GB-only
+            // (the leave will have its own day with activityByDay populated)
+            dayIlcRec.activity = weekCodes.indexOf('GB') !== -1 ? 'GB' : weekCodes[0];
+          }
+          // single-code week: leave dayIlcRec.activity as-is (inherited from r)
         }
 
         var mondayRec = mondayMap[serial + '_' + dayDateStr] || null;
@@ -8565,7 +8588,7 @@ async function detectIlcVariances() {
           weekending:     we,
           date:           dayDateStr,
           dayOfWeek:      dayKey,
-          ilcActivity:    r.activity      || '',
+          ilcActivity:    dayIlcRec.activity || r.activity || '',
           ilcClocking:    dayHrs,
           mondayStatus:   mondayRec ? (mondayRec.status   || '') : '',
           mondayDuration: mondayRec ? (mondayRec.duration || '') : '',
