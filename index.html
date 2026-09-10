@@ -8809,7 +8809,10 @@ async function detectIlcVariances() {
       // Only write variance rows (skip clean days to keep the collection lean)
       if (varianceFlag !== 'Yes') continue;
 
-      var docRef = _fbDb.collection('ilcMondayVariances').doc();
+      // Use a deterministic doc ID (serial + date) so re-running detection
+      // overwrites the existing row instead of appending a duplicate.
+      var safeDocId = entry.serial.replace(/[^a-zA-Z0-9]/g, '_') + '__' + entry.date;
+      var docRef = _fbDb.collection('ilcMondayVariances').doc(safeDocId);
       batch.set(docRef, {
         ibmSerialNo:    entry.serial,
         name:           entry.name,
