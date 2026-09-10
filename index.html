@@ -7899,6 +7899,30 @@ async function detectWfhVariances() {
   console.log('[WFH Detect] start — year:', year, 'month:', month);
 
   try {
+    // ── Step 0: Delete existing wfhVariances for this period so that
+    //    re-running detection never produces duplicate rows.
+    {
+      var delQ = _fbDb.collection('wfhVariances');
+      if (year)  delQ = delQ.where('year',  '==', year);
+      if (month) delQ = delQ.where('month', '==', month);
+      var delSnap = await delQ.get({ source: 'server' });
+      if (delSnap.size > 0) {
+        var delBatch = _fbDb.batch();
+        var delCount = 0;
+        for (var di = 0; di < delSnap.docs.length; di++) {
+          delBatch.delete(delSnap.docs[di].ref);
+          delCount++;
+          if (delCount >= 490) {
+            await delBatch.commit();
+            delBatch = _fbDb.batch();
+            delCount = 0;
+          }
+        }
+        if (delCount > 0) await delBatch.commit();
+        console.log('[WFH Detect] cleared', delSnap.size, 'stale variance records before re-detection');
+      }
+    }
+
     var results = await Promise.all([
       _fbDb.collection('mondayAttendance').get(),
       _fbDb.collection('wfhSchedule').get()
@@ -7919,16 +7943,37 @@ async function detectWfhVariances() {
     });
     console.log('[WFH Detect] wfhMap keys:', Object.keys(wfhMap).length);
 
-    // Build in-memory Monday records
-    // allMondayRecords — full set, used for accurate weekly boundary lookups
-    // mondayRecords    — filtered by selected year/month, used for iteration (what to write)
-    var allMondayRecords = [];
-    mondaySnap.forEach(function(d) { allMondayRecords.push(Object.assign({ _id: d.id }, d.data())); });
-    console.log('[WFH Detect] total Monday records before filter:', allMondayRecords.length);
+    // Build in-memory Monday records, then deduplicate by serial_date.
+    // Monday.com exports produce multiple rows per person per date (work status + leave rows).
+    // Presence statuses (Office, Remote Scheduled/Unscheduled) take priority over
+    // leave/rest rows — WFH schedule compliance is only meaningful against a work status.
+    // A single deduplicated record per person per date is all we need here.
+    function _wfhIsPresence(status) {
+      var b = _statusBaseType((status || '').trim());
+      return b === 'Office' || b === 'Remote (Scheduled)' ||
+             b === 'Remote (Unscheduled)' || b === 'Unscheduled' || b === 'No Status' || b === '';
+    }
+    var rawMondayRecords = [];
+    mondaySnap.forEach(function(d) { rawMondayRecords.push(Object.assign({ _id: d.id }, d.data())); });
+    console.log('[WFH Detect] total Monday records before dedup:', rawMondayRecords.length);
+
+    // Deduplicate: one record per serial_date, presence status wins over leave/rest
+    var dedupMap = {};
+    rawMondayRecords.forEach(function(r) {
+      var key = (r.ibmSerialNo || '') + '_' + (r.date || '');
+      if (!dedupMap[key]) {
+        dedupMap[key] = r;
+      } else if (_wfhIsPresence(r.status) && !_wfhIsPresence(dedupMap[key].status)) {
+        dedupMap[key] = r;
+      }
+    });
+    var allMondayRecords = Object.keys(dedupMap).map(function(k) { return dedupMap[k]; });
+    console.log('[WFH Detect] Monday records after dedup:', allMondayRecords.length);
     if (allMondayRecords.length > 0) {
       var sampleMon = allMondayRecords[0];
       console.log('[WFH Detect] sample Monday record:', JSON.stringify({ ibmSerialNo: sampleMon.ibmSerialNo, date: sampleMon.date, status: sampleMon.status, year: sampleMon.year, month: sampleMon.month }));
     }
+
     var mondayRecords = allMondayRecords;
     if (year || month) {
       mondayRecords = allMondayRecords.filter(function(r) {
@@ -8267,7 +8312,8 @@ function _mondayDateFromWeekending(weekendingStr) {
   return d.toISOString().substring(0, 10);
 }
 
-// ── Apply ILC 7-rule variance logic
+// ── Apply ILC variance logic — ILC is the source of truth.
+// Branch on what ILC recorded, then verify Monday agrees.
 // Returns { variance: 'Yes'|'No', reason: '' }
 function _applyIlcVarianceRule(ilcRec, mondayRec) {
   var mStatus   = (mondayRec && mondayRec.status)   ? mondayRec.status   : '';
@@ -8280,13 +8326,14 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
   var ilcAct    = (ilcRec.activity || '').trim().toUpperCase();
   var ilcMonHrs = parseFloat(ilcRec.monday || 0) || 0;
 
-  // ILC may have multiple activities stored comma-separated (e.g. "GB, SL")
+  // ILC may have multiple activities comma-separated (e.g. "GB, SL")
   var ilcActList = ilcAct.split(',').map(function(a) { return a.trim(); });
   var hasGB  = ilcActList.indexOf('GB')   !== -1;
   var hasSL  = ilcActList.indexOf('SL')   !== -1;
   var hasVL  = ilcActList.indexOf('VL')   !== -1;
   var hasCDO = ilcActList.indexOf('CDO')  !== -1;
   var hasHOL = ilcActList.indexOf('HOL')  !== -1 || ilcActList.indexOf('OHOL') !== -1;
+  var hasLeave = hasSL || hasVL || hasCDO || hasHOL;
 
   // Resolve per-day hours from activityByDay breakdown
   var abdMon = (ilcRec.activityByDay && ilcRec.activityByDay.monday) || null;
@@ -8295,119 +8342,93 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
     abdMon.forEach(function(e) {
       var code = (typeof e === 'object' ? e.code : e || '').trim().toUpperCase();
       var hrs  = (typeof e === 'object' ? parseFloat(e.hrs || 0) : 0) || 0;
-      if (code === 'GB')                      gbHrs  = hrs;
-      else if (code === 'SL')               { slHrs  = hrs; leaveHrs += hrs; }
-      else if (code === 'VL')               { vlHrs  = hrs; leaveHrs += hrs; }
-      else if (code === 'CDO')              { cdoHrs = hrs; leaveHrs += hrs; }
-      else if (code === 'HOL' || code === 'OHOL') { holHrs = hrs; leaveHrs += hrs; }
-      else                                  { leaveHrs += hrs; }
+      if (code === 'GB')                           gbHrs   = hrs;
+      else if (code === 'SL')                    { slHrs   = hrs; leaveHrs += hrs; }
+      else if (code === 'VL')                    { vlHrs   = hrs; leaveHrs += hrs; }
+      else if (code === 'CDO')                   { cdoHrs  = hrs; leaveHrs += hrs; }
+      else if (code === 'HOL' || code === 'OHOL'){ holHrs  = hrs; leaveHrs += hrs; }
+      else                                        { leaveHrs += hrs; }
     });
   } else {
-    // Single activity: all hours belong to that activity
-    if (hasGB)  gbHrs  = ilcMonHrs;
-    if (hasSL)  slHrs  = ilcMonHrs;
-    if (hasVL)  vlHrs  = ilcMonHrs;
-    if (hasCDO) cdoHrs = ilcMonHrs;
-    if (hasHOL) holHrs = ilcMonHrs;
-    if (!hasGB) leaveHrs = ilcMonHrs;
+    if (hasGB)  gbHrs    = ilcMonHrs;
+    if (hasSL)  { slHrs  = ilcMonHrs; leaveHrs = ilcMonHrs; }
+    if (hasVL)  { vlHrs  = ilcMonHrs; leaveHrs = ilcMonHrs; }
+    if (hasCDO) { cdoHrs = ilcMonHrs; leaveHrs = ilcMonHrs; }
+    if (hasHOL) { holHrs = ilcMonHrs; leaveHrs = ilcMonHrs; }
   }
 
-  // ── Helper: is this Monday status a "presence" status (not leave)?
-  var isPresenceStatus = (mBase === 'Office' || mBase === 'Remote (Scheduled)' ||
-                          mBase === 'Remote (Unscheduled)' || mBase === 'Unscheduled');
+  var isPresence = (mBase === 'Office' || mBase === 'Remote (Scheduled)' ||
+                    mBase === 'Remote (Unscheduled)' || mBase === 'Unscheduled');
 
-  // Rule 0 — Emergency: skip all checks
+  // Rule 0 — Emergency leave on either side: exempt
   if (ilcActList.indexOf('EMPL') !== -1 || mBase === 'Emergency') {
     return { variance: 'No', reason: 'Emergency leave — exempt' };
   }
 
-  // ── BRANCH A: Monday status is a presence type (Office / Remote) ─────────
+  // ── BRANCH A: ILC = GB only (pure work day, no leave) ────────────────────
+  // ILC says the employee worked a full day. Monday must agree with a presence status.
 
-  // Rule 1 — GB=9 and Monday is presence → no variance
-  if (hasGB && ilcMonHrs === 9 && isPresenceStatus) {
-    return { variance: 'No', reason: '' };
+  if (hasGB && !hasLeave) {
+    // GB=9 (or any standard work hours) — Monday must be a presence status
+    if (isPresence) return { variance: 'No', reason: '' };
+    // Monday recorded something other than a work status — variance
+    return { variance: 'Yes', reason: 'ILC is GB/' + ilcMonHrs + 'h but Monday is: ' + (mStatus || 'no status') };
   }
 
-  // Rule 1b — GB=9 but Monday is NOT presence → variance
-  if (hasGB && ilcMonHrs === 9 && !isPresenceStatus && mBase !== '') {
-    return { variance: 'Yes', reason: 'ILC GB/9h but Monday is: ' + mStatus };
-  }
+  // ── BRANCH B: ILC = GB + leave (half-day split) ───────────────────────────
+  // ILC says the employee worked a partial day and took leave for the rest.
+  // Monday must show the matching leave type (Sick/Vacation/CDO/Holiday).
+  // A presence-only status on Monday is a variance — it ignores the leave.
 
-  // ── BRANCH B: Monday status is a leave type — check duration ─────────────
-
-  // Rule 2 — Monday leave, Half-day (AM or PM)
-  // ILC must have: GB = 4.5 or 5h  AND  leave activity = 4h
-  if (!isPresenceStatus && mHalfDay && mBase !== '') {
-    var expectedLeaveHrs = 4;
-    var gbOk    = (gbHrs === 4.5 || gbHrs === 5 || gbHrs === 4);
-    var leaveOk = (leaveHrs === expectedLeaveHrs);
-    // Validate the leave type matches Monday base
-    var leaveTypeOk = false;
-    if      (mBase === 'Sick')     leaveTypeOk = hasSL;
-    else if (mBase === 'Vacation') leaveTypeOk = hasVL;
-    else if (mBase === 'CDO')      leaveTypeOk = hasCDO;
-    else if (mBase === 'Holiday')  leaveTypeOk = hasHOL;
-    else                           leaveTypeOk = (leaveHrs > 0);  // unknown leave — just check hours
-    if (gbOk && leaveOk && leaveTypeOk) {
-      return { variance: 'No', reason: '' };
+  if (hasGB && hasLeave) {
+    // Determine what leave type ILC recorded
+    var ilcLeaveType = hasSL ? 'Sick' : hasVL ? 'Vacation' : hasCDO ? 'CDO' : 'Holiday';
+    // Monday must match that leave type with a half-day duration
+    if (mBase === ilcLeaveType && mHalfDay) return { variance: 'No', reason: '' };
+    // Monday shows full-day leave → wrong, ILC only has partial leave
+    if (mBase === ilcLeaveType && mFullDay) {
+      return { variance: 'Yes', reason: 'ILC has GB+' + ilcLeaveType + ' (half day) but Monday is ' + mStatus + ' Full Day' };
     }
-    var reason = 'Monday ' + mStatus + ': expected GB(4.5/5h)+leave(4h) in ILC, got GB=' + gbHrs + 'h leave=' + leaveHrs + 'h';
-    return { variance: 'Yes', reason: reason };
-  }
-
-  // Rule 3 — Monday leave, Full Day
-  // ILC must have: NO GB for that day, leave activity = 8h
-  if (!isPresenceStatus && mFullDay && mBase !== '') {
-    var expectedFullHrs = 8;
-    var noGb     = (gbHrs === 0);
-    var leaveOk2 = (leaveHrs === expectedFullHrs);
-    // Validate the leave type matches Monday base
-    var leaveTypeOk2 = false;
-    if      (mBase === 'Sick')     leaveTypeOk2 = hasSL && (slHrs === expectedFullHrs);
-    else if (mBase === 'Vacation') leaveTypeOk2 = hasVL && (vlHrs === expectedFullHrs);
-    else if (mBase === 'CDO')      leaveTypeOk2 = hasCDO && (cdoHrs === expectedFullHrs);
-    else if (mBase === 'Holiday')  leaveTypeOk2 = hasHOL && (holHrs === expectedFullHrs);
-    else                           leaveTypeOk2 = (leaveHrs === expectedFullHrs);
-    if (noGb && leaveOk2 && leaveTypeOk2) {
-      return { variance: 'No', reason: '' };
+    // Monday shows a presence status → doesn't account for the leave hours in ILC
+    if (isPresence) {
+      return { variance: 'Yes', reason: 'ILC has GB(' + gbHrs + 'h)+' + ilcLeaveType + '(' + leaveHrs + 'h) but Monday is: ' + mStatus };
     }
-    var reason2 = '';
-    if (!noGb) {
-      reason2 = 'Monday ' + mStatus + ' (Full Day): ILC still has GB=' + gbHrs + 'h — expected no GB';
-    } else if (!leaveTypeOk2) {
-      reason2 = 'Monday ' + mStatus + ' (Full Day): ILC leave=' + leaveHrs + 'h — expected 8h of matching leave';
-    } else {
-      reason2 = 'Monday ' + mStatus + ' (Full Day): ILC clocking mismatch (GB=' + gbHrs + 'h, leave=' + leaveHrs + 'h)';
+    // Monday shows a different leave type
+    return { variance: 'Yes', reason: 'ILC has GB+' + ilcLeaveType + ' but Monday is: ' + (mStatus || 'no status') };
+  }
+
+  // ── BRANCH C: ILC = leave only (full day, no GB) ──────────────────────────
+  // ILC says the employee took a full day of leave. Monday must show matching leave.
+  // A presence status on Monday is a variance — it says they worked when ILC shows leave.
+
+  if (!hasGB && hasLeave) {
+    var ilcLeaveTypeFull = hasSL ? 'Sick' : hasVL ? 'Vacation' : hasCDO ? 'CDO' : 'Holiday';
+    var expectedMBase    = ilcLeaveTypeFull;
+
+    // Monday matches the leave type (any duration)
+    if (mBase === expectedMBase) return { variance: 'No', reason: '' };
+
+    // Monday is a presence status — completely disagrees with ILC full-day leave
+    if (isPresence) {
+      return { variance: 'Yes', reason: 'ILC is ' + ilcLeaveTypeFull + ' (full day) but Monday is: ' + mStatus };
     }
-    return { variance: 'Yes', reason: reason2 };
+    // Monday is a different leave type
+    return { variance: 'Yes', reason: 'ILC is ' + ilcLeaveTypeFull + ' but Monday is: ' + (mStatus || 'no status') };
   }
 
-  // ── BRANCH C: Monday leave with no duration set — fall back to type check ─
-
-  // Rule 4 — CDO: Monday=CDO, ILC must have CDO=8 and no GB
-  if (mBase === 'CDO') {
-    if (hasCDO && gbHrs === 0 && (cdoHrs === 8 || ilcMonHrs === 8)) return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC CDO mismatch — Monday=CDO, ILC=' + ilcAct + '/' + ilcMonHrs + 'h' };
+  // ── BRANCH D: ILC = CDO only ──────────────────────────────────────────────
+  if (hasCDO && !hasGB) {
+    if (mBase === 'CDO') return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC is CDO but Monday is: ' + (mStatus || 'no status') };
   }
 
-  // Rule 5 — Holiday
-  if (mBase === 'Holiday') {
-    if (hasHOL && gbHrs === 0) return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC=HOL/OHOL but Monday=' + mStatus };
+  // ── BRANCH E: ILC = Holiday only ─────────────────────────────────────────
+  if (hasHOL && !hasGB) {
+    if (mBase === 'Holiday') return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC is Holiday but Monday is: ' + (mStatus || 'no status') };
   }
 
-  // Rule 6 — Vacation with no duration: ILC must be VL, no GB
-  if (mBase === 'Vacation') {
-    if (hasVL && gbHrs === 0) return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC=VL mismatch — Monday=' + mStatus + ', ILC=' + ilcAct };
-  }
-
-  // Rule 7 — Sick with no duration: ILC must be SL, no GB
-  if (mBase === 'Sick') {
-    if (hasSL && gbHrs === 0) return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC=SL mismatch — Monday=' + mStatus + ', ILC=' + ilcAct };
-  }
-
+  // Fallback — unrecognised combination, no variance assumed
   return { variance: 'No', reason: '' };
 }
 
@@ -8491,6 +8512,30 @@ async function detectIlcVariances() {
   showToast('Detecting ILC variances…', '🔍');
 
   try {
+    // ── Step 0: Delete existing ilcMondayVariances for this period so that
+    //    re-running detection never produces duplicate rows.
+    {
+      var delQ = _fbDb.collection('ilcMondayVariances');
+      if (year)  delQ = delQ.where('year',  '==', year);
+      if (month) delQ = delQ.where('month', '==', month);
+      var delSnap = await delQ.get({ source: 'server' });
+      if (delSnap.size > 0) {
+        var delBatch = _fbDb.batch();
+        var delCount = 0;
+        for (var di = 0; di < delSnap.docs.length; di++) {
+          delBatch.delete(delSnap.docs[di].ref);
+          delCount++;
+          if (delCount >= 490) {
+            await delBatch.commit();
+            delBatch = _fbDb.batch();
+            delCount = 0;
+          }
+        }
+        if (delCount > 0) await delBatch.commit();
+        console.log('[ILC Detect] cleared', delSnap.size, 'stale variance records before re-detection');
+      }
+    }
+
     var results = await Promise.all([
       _fbDb.collection('monthlyAttendance').get(),
       _fbDb.collection('mondayAttendance').get()
@@ -8500,34 +8545,20 @@ async function detectIlcVariances() {
     var mondaySnap = results[1];
     console.log('[ILC Detect] monthlyAttendance docs:', ilcSnap.size, '| mondayAttendance docs:', mondaySnap.size);
 
-    // Build Monday lookup map: "ibmSerialNo_YYYY-MM-DD" → mondayRecord
-    // When multiple docs exist for the same serial+date (e.g. duplicates from
-    // Monday.com exports), prefer the authoritative attendance record over
-    // rest/leave records using a priority score. Highest score wins.
-    function _mondayStatusPriority(status) {
-      var b = _statusBaseType((status || '').trim());
-      if (b === 'Office')              return 6;
-      if (b === 'Remote (Scheduled)')  return 5;
-      if (b === 'Remote (Unscheduled)' || b === 'Unscheduled') return 4;
-      if (b === 'CDO')                 return 3;
-      // Actual leave types (Sick, Vacation, Holiday) outrank Rest Day so that
-      // when both exist for the same person+date, the leave record wins.
-      if (b === 'Sick' || b === 'Vacation' || b === 'Holiday') return 2;
-      if (b === 'Rest Day')            return 1;
-      if (b === '')                    return 0;
-      return 1; // anything else
-    }
-    var mondayMap = {};
+    // Build Monday lookup: "ibmSerialNo_YYYY-MM-DD" → array of ALL records for that key.
+    // Monday.com exports can produce multiple rows per person per date (e.g. one work
+    // status row + one leave row for the same half-day split). We keep ALL of them and
+    // check each one against the ILC. The day is clean if ANY record passes; a variance
+    // is only written when NONE of the records reconcile with the ILC clocking.
+    var mondayMapAll = {};
     mondaySnap.forEach(function(d) {
       var r = d.data();
       var key = (r.ibmSerialNo || '') + '_' + (r.date || '');
-      if (!mondayMap[key] || _mondayStatusPriority(r.status) > _mondayStatusPriority(mondayMap[key].status)) {
-        mondayMap[key] = r;
-      }
+      if (!mondayMapAll[key]) mondayMapAll[key] = [];
+      mondayMapAll[key].push(r);
     });
-    console.log('[ILC Detect] mondayMap keys:', Object.keys(mondayMap).length);
-    // Log a sample Monday key so we can verify the format
-    var sampleMonKey = Object.keys(mondayMap)[0];
+    console.log('[ILC Detect] mondayMapAll keys:', Object.keys(mondayMapAll).length);
+    var sampleMonKey = Object.keys(mondayMapAll)[0];
     if (sampleMonKey) console.log('[ILC Detect] sample Monday map key:', sampleMonKey);
 
     var ts = firebase.firestore.FieldValue.serverTimestamp();
@@ -8588,7 +8619,8 @@ async function detectIlcVariances() {
         dayDate.setUTCDate(fridayD.getUTCDate() + dayInfo.offset);
         var dayDateStr = dayDate.toISOString().substring(0, 10);
         var lookupKey = serial + '_' + dayDateStr;
-        console.log('[ILC Detect] checking', dayKey, '| serial:', serial, '| date:', dayDateStr, '| hrs:', dayHrs, '| Monday hit:', !!mondayMap[lookupKey]);
+        var mondayRecs = mondayMapAll[lookupKey] || [];
+        console.log('[ILC Detect] checking', dayKey, '| serial:', serial, '| date:', dayDateStr, '| hrs:', dayHrs, '| Monday records:', mondayRecs.length);
 
         // Build a pseudo-ILC record for just this day so _applyIlcVarianceRule can work
         var dayIlcRec = Object.assign({}, r);
@@ -8599,66 +8631,97 @@ async function detectIlcVariances() {
         // leave codes that belong to OTHER days of the same week.
         if (r.activityByDay && r.activityByDay[dayKey] && r.activityByDay[dayKey].length) {
           dayIlcRec.activityByDay = { monday: r.activityByDay[dayKey] };
-          // Rebuild activity from the per-day codes only (e.g. a pure-GB day
-          // on a GB,VL week must NOT inherit VL from the week-level field)
           dayIlcRec.activity = r.activityByDay[dayKey]
             .map(function(e) { return (typeof e === 'object' ? e.code : e || '').trim().toUpperCase(); })
             .filter(Boolean)
             .join(', ');
         } else {
           dayIlcRec.activityByDay = {};
-          // activityByDay missing — fall back to week-level activity only when
-          // there is a single code; if multiple codes exist (e.g. "GB, VL") and
-          // we have no per-day breakdown, we cannot safely attribute a leave code
-          // to this specific day, so strip all leave codes and keep only GB.
           var weekCodes = (r.activity || '').toUpperCase().split(',').map(function(a) { return a.trim(); }).filter(Boolean);
           if (weekCodes.length > 1) {
-            // Multi-activity week without per-day data: treat this day as GB-only
-            // (the leave will have its own day with activityByDay populated)
             dayIlcRec.activity = weekCodes.indexOf('GB') !== -1 ? 'GB' : weekCodes[0];
           }
-          // single-code week: leave dayIlcRec.activity as-is (inherited from r)
         }
 
-        var mondayRec = mondayMap[serial + '_' + dayDateStr] || null;
-        var result;
-        if (!mondayRec) {
-          result = { variance: 'Yes', reason: 'No Monday.com record found for ' + dayDateStr };
-        } else {
-          result = _applyIlcVarianceRule(dayIlcRec, mondayRec);
+        // No Monday record at all → variance
+        if (mondayRecs.length === 0) {
+          var noRecResult = { variance: 'Yes', reason: 'No Monday.com record found for ' + dayDateStr };
+          var docRef = _fbDb.collection('ilcMondayVariances').doc();
+          batch.set(docRef, {
+            ibmSerialNo:    serial,
+            name:           r.name  || '',
+            email:          r.email || '',
+            weekending:     we,
+            date:           dayDateStr,
+            dayOfWeek:      dayKey,
+            ilcActivity:    dayIlcRec.activity || r.activity || '',
+            ilcClocking:    dayHrs,
+            mondayStatus:   '',
+            mondayDuration: '',
+            variance:       noRecResult.variance,
+            varianceReason: noRecResult.reason,
+            month:          r.month || month,
+            year:           r.year  || year,
+            detectedAt:     ts
+          });
+          batchCount++;
+          totalWritten++;
+          if (batchCount >= BATCH_LIMIT) {
+            await batch.commit();
+            batch = _fbDb.batch();
+            batchCount = 0;
+            await new Promise(function(res) { setTimeout(res, 300); });
+          }
+          continue;
         }
 
-        // Only write actual variances
-        if (result.variance !== 'Yes') continue;
-
-        var docRef = _fbDb.collection('ilcMondayVariances').doc();
-        batch.set(docRef, {
-          ibmSerialNo:    serial,
-          name:           r.name          || '',
-          email:          r.email         || '',
-          weekending:     we,
-          date:           dayDateStr,
-          dayOfWeek:      dayKey,
-          ilcActivity:    dayIlcRec.activity || r.activity || '',
-          ilcClocking:    dayHrs,
-          mondayStatus:   mondayRec ? (mondayRec.status   || '') : '',
-          mondayDuration: mondayRec ? (mondayRec.duration || '') : '',
-          variance:       result.variance,
-          varianceReason: result.reason,
-          month:          r.month || month,
-          year:           r.year  || year,
-          detectedAt:     ts
-        });
-        batchCount++;
-        totalWritten++;
-        if (batchCount >= BATCH_LIMIT) {
-          await batch.commit();
-          batch = _fbDb.batch();
-          batchCount = 0;
-          await new Promise(function(res) { setTimeout(res, 300); });
+        // Check ALL Monday records for this person+date.
+        // If ANY record passes (no variance), the day is clean — skip it entirely.
+        // Only write a variance when every single Monday record fails the check.
+        var failedResults = [];
+        var anyPass = false;
+        for (var mi = 0; mi < mondayRecs.length; mi++) {
+          var chk = _applyIlcVarianceRule(dayIlcRec, mondayRecs[mi]);
+          if (chk.variance !== 'Yes') { anyPass = true; break; }
+          failedResults.push({ rec: mondayRecs[mi], reason: chk.reason });
         }
-      }
-    }
+        if (anyPass) continue;  // at least one Monday record reconciles — no variance
+
+        // Every Monday record for this date produced a variance.
+        // Write one variance row per failing Monday record so the reviewer sees
+        // exactly which status/duration combinations don't match the ILC.
+        for (var fi = 0; fi < failedResults.length; fi++) {
+          var failRec    = failedResults[fi].rec;
+          var failReason = failedResults[fi].reason;
+          var docRef = _fbDb.collection('ilcMondayVariances').doc();
+          batch.set(docRef, {
+            ibmSerialNo:    serial,
+            name:           r.name  || '',
+            email:          r.email || '',
+            weekending:     we,
+            date:           dayDateStr,
+            dayOfWeek:      dayKey,
+            ilcActivity:    dayIlcRec.activity || r.activity || '',
+            ilcClocking:    dayHrs,
+            mondayStatus:   failRec.status   || '',
+            mondayDuration: failRec.duration || '',
+            variance:       'Yes',
+            varianceReason: failReason,
+            month:          r.month || month,
+            year:           r.year  || year,
+            detectedAt:     ts
+          });
+          batchCount++;
+          totalWritten++;
+          if (batchCount >= BATCH_LIMIT) {
+            await batch.commit();
+            batch = _fbDb.batch();
+            batchCount = 0;
+            await new Promise(function(res) { setTimeout(res, 300); });
+          }
+        }  // end fi loop
+      }  // end weekday loop
+    }  // end ilcRecords loop
     if (batchCount > 0) await batch.commit();
 
     showToast('ILC variance detection complete — ' + totalWritten + ' variance(s) written.', '✅');
