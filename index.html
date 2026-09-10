@@ -3784,7 +3784,7 @@
           <table class="admin-table" id="ilc-var-table">
             <thead><tr>
               <th>IBM Serial No.</th><th>Name</th><th>Email</th>
-              <th>Date</th><th>ILC Activity</th><th>ILC Clocking</th>
+              <th>Date (Weekending)</th><th>ILC Activity</th><th>ILC Clocking</th>
               <th>Monday Status</th><th>Monday Duration</th>
               <th>Variance</th><th>Variance Reason</th>
             </tr></thead>
@@ -8328,6 +8328,42 @@ async function notifyWfhVariances() {
 
 var _ilcVarianceRecords = [];
 
+// ── Helper: normalise any date string to ISO YYYY-MM-DD (UTC-safe).
+// Handles ISO, MM/DD/YYYY, DD/MM/YYYY, "Aug 3, 2026", Excel serial numbers, etc.
+// Returns '' if the string cannot be parsed.
+function _toISODate(raw) {
+  if (!raw && raw !== 0) return '';
+  var s = String(raw).trim();
+  if (!s) return '';
+  // Excel numeric serial (e.g. 46310)
+  if (/^\d{5}$/.test(s)) {
+    var excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    var d = new Date(excelEpoch.getTime() + parseInt(s, 10) * 86400000);
+    return d.toISOString().substring(0, 10);
+  }
+  // Already ISO YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // Try direct parse with UTC anchor (handles ISO datetime strings too)
+  var d = new Date(s.indexOf('T') !== -1 ? s : s + 'T00:00:00Z');
+  if (!isNaN(d.getTime())) return d.toISOString().substring(0, 10);
+  // MM/DD/YYYY or M/D/YYYY
+  var slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slash) {
+    d = new Date(Date.UTC(parseInt(slash[3]), parseInt(slash[1]) - 1, parseInt(slash[2])));
+    if (!isNaN(d.getTime())) return d.toISOString().substring(0, 10);
+  }
+  // DD-MM-YYYY or D-M-YYYY
+  var dash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dash) {
+    d = new Date(Date.UTC(parseInt(dash[3]), parseInt(dash[2]) - 1, parseInt(dash[1])));
+    if (!isNaN(d.getTime())) return d.toISOString().substring(0, 10);
+  }
+  // Fallback — let the browser parse it, anchor to UTC
+  d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().substring(0, 10);
+  return '';
+}
+
 // ── Helper: from a weekending (Friday) date string, return YYYY-MM-DD of that Monday
 function _mondayDateFromWeekending(weekendingStr) {
   if (!weekendingStr) return '';
@@ -8511,7 +8547,7 @@ function _renderIlcVariance() {
     return true;
   });
   filtered.sort(function(a, b) {
-    var dA = new Date(a.date || a.weekending || ''), dB = new Date(b.date || b.weekending || '');
+    var dA = new Date(a.weekending || ''), dB = new Date(b.weekending || '');
     var tDiff = (isNaN(dA) ? 0 : dA.getTime()) - (isNaN(dB) ? 0 : dB.getTime());
     if (tDiff !== 0) return tDiff;
     return _lastNameKey(a.name) < _lastNameKey(b.name) ? -1 : 1;
@@ -8528,7 +8564,7 @@ function _renderIlcVariance() {
       '<td>' + escapeHtml(r.ibmSerialNo    || '') + '</td>' +
       '<td>' + escapeHtml(r.name           || '') + '</td>' +
       '<td>' + escapeHtml(r.email          || '') + '</td>' +
-      '<td>' + escapeHtml(r.date || r.weekending || '') + '</td>' +
+      '<td>' + escapeHtml(r.weekending || '') + '</td>' +
       '<td>' + escapeHtml(r.ilcActivity    || '') + '</td>' +
       '<td style="text-align:center;">' + escapeHtml(String(r.ilcClocking != null ? r.ilcClocking : '')) + '</td>' +
       '<td>' + escapeHtml(r.mondayStatus   || '') + '</td>' +
@@ -8700,12 +8736,23 @@ async function detectIlcVariances() {
     // Key: "ibmSerialNo|YYYY-MM-DD"
     // Value: array of unique { status, duration } records for that person+date.
     //
-    // Deduplication: same serial+date+status → keep only one entry.
-    // This mirrors the dedup already applied in _renderMondayAtt so the
-    // comparison sees exactly what is displayed on the Monday Attendance page.
+    // One canonical Monday record per serial+date is kept using a priority rule:
+    //   1. Presence statuses (Office / Remote (Scheduled) / Remote (Unscheduled) / Unscheduled)
+    //   2. Any other status (leave, Rest Day, No Status, etc.)
+    // Within the same priority tier the first Firestore document wins.
+    // This prevents stale Rest Day / Sick records from a previous upload masking
+    // a valid presence record that was uploaded later (or vice-versa).
 
-    var mondayDayMap = {};  // "serial|YYYY-MM-DD" → [{ status, duration }]
-    var _monDedup    = {};  // guards serial|date|status duplicates
+    // Priority rank: lower number = higher priority (kept over higher number)
+    function _mondayStatusPriority(status) {
+      var b = _statusBaseType((status || '').trim());
+      if (b === 'Office' || b === 'Remote (Scheduled)' ||
+          b === 'Remote (Unscheduled)' || b === 'Unscheduled') return 0;
+      return 1;
+    }
+
+    var mondayDayMap = {};  // "serial|YYYY-MM-DD" → { status, duration }  (single best record)
+    var _monDedup    = {};  // guards serial|date|status exact duplicates
 
     mondaySnap.forEach(function(d) {
       var r = d.data();
@@ -8721,27 +8768,36 @@ async function detectIlcVariances() {
       }
 
       var serial  = (r.ibmSerialNo || '').trim();
-      var dateStr = (r.date        || '').trim();
+      // Normalise to ISO YYYY-MM-DD so the key always matches the ILC-computed dateStr
+      var dateStr = _toISODate((r.date || '').trim());
       if (!serial || !dateStr) return;
 
-      // Skip duplicate serial+date+status entries from re-uploads
+      // Skip exact duplicate serial+date+status docs from re-uploads
       var dedupKey = serial + '|' + dateStr + '|' + (r.status || '');
       if (_monDedup[dedupKey]) return;
       _monDedup[dedupKey] = true;
 
-      var mapKey = serial + '|' + dateStr;
-      if (!mondayDayMap[mapKey]) mondayDayMap[mapKey] = [];
-      mondayDayMap[mapKey].push({ status: r.status || '', duration: r.duration || '' });
+      var mapKey  = serial + '|' + dateStr;
+      var incoming = { status: r.status || '', duration: r.duration || '' };
+      var existing = mondayDayMap[mapKey];
+
+      if (!existing) {
+        // First record for this person+date
+        mondayDayMap[mapKey] = incoming;
+      } else if (_mondayStatusPriority(incoming.status) < _mondayStatusPriority(existing.status)) {
+        // Incoming has higher priority (e.g. presence beats Rest Day) — replace
+        mondayDayMap[mapKey] = incoming;
+      }
+      // Otherwise keep the existing higher-priority record
     });
 
     console.log('[ILC Detect] Monday day entries:', Object.keys(mondayDayMap).length);
 
     // ── Step 4: Compare — one result row per ILC day entry ───────────────────
     // For each ILC day:
-    //   • No Monday records at all → variance "No Monday.com record"
-    //   • At least one Monday record passes _applyIlcVarianceRule → No variance
-    //   • All Monday records fail → variance, show the Monday statuses found
-    //     as a single combined string (e.g. "Sick / Rest Day") — ONE row only.
+    //   • No Monday record for that person+date → variance "No Monday.com record"
+    //   • The single canonical Monday record passes _applyIlcVarianceRule → No variance
+    //   • The canonical record fails → variance, show its status/reason
 
     var ts         = firebase.firestore.FieldValue.serverTimestamp();
     var batch      = _fbDb.batch();
@@ -8751,58 +8807,35 @@ async function detectIlcVariances() {
 
     var ilcKeys = Object.keys(ilcDayMap);
     for (var i = 0; i < ilcKeys.length; i++) {
-      var entry       = ilcDayMap[ilcKeys[i]];
-      var mondayRecs  = mondayDayMap[ilcKeys[i]] || [];
+      var entry      = ilcDayMap[ilcKeys[i]];
+      var mondayRec  = mondayDayMap[ilcKeys[i]] || null;  // single canonical record
 
       // Build a minimal ILC record shaped the way _applyIlcVarianceRule expects
       var dayIlcRec = {
-        activity:     entry.ilcActivity,
-        monday:       entry.ilcClocking,
-        activityByDay: {}   // activityByDay already resolved into activity string above
+        activity:      entry.ilcActivity,
+        monday:        entry.ilcClocking,
+        activityByDay: {}   // already resolved into activity string above
       };
 
-      var varianceFlag   = 'No';
-      var varianceReason = '';
+      var varianceFlag          = 'No';
+      var varianceReason        = '';
       var mondayStatusDisplay   = '';
       var mondayDurationDisplay = '';
 
-      if (mondayRecs.length === 0) {
+      if (!mondayRec) {
         // ILC has a clocking but Monday has no record at all for this person+date
         varianceFlag   = 'Yes';
         varianceReason = 'No Monday.com record found for ' + entry.date;
 
       } else {
-        // Check all Monday records; day is clean if ANY passes
-        var failedRecs = [];
-        var anyPass    = false;
-        for (var mi = 0; mi < mondayRecs.length; mi++) {
-          var chk = _applyIlcVarianceRule(dayIlcRec, mondayRecs[mi]);
-          if (chk.variance !== 'Yes') { anyPass = true; break; }
-          failedRecs.push({ rec: mondayRecs[mi], reason: chk.reason });
-        }
+        // Single canonical record — run the variance rule against it
+        mondayStatusDisplay   = mondayRec.status   || '';
+        mondayDurationDisplay = mondayRec.duration || '';
 
-        if (!anyPass) {
-          varianceFlag = 'Yes';
-          // Summarise all unique statuses found on Monday for this day into one string
-          var uniqueStatuses  = [];
-          var uniqueDurations = [];
-          var uniqueReasons   = [];
-          failedRecs.forEach(function(f) {
-            if (f.rec.status   && uniqueStatuses.indexOf(f.rec.status)     === -1) uniqueStatuses.push(f.rec.status);
-            if (f.rec.duration && uniqueDurations.indexOf(f.rec.duration)  === -1) uniqueDurations.push(f.rec.duration);
-            if (f.reason       && uniqueReasons.indexOf(f.reason)          === -1) uniqueReasons.push(f.reason);
-          });
-          mondayStatusDisplay   = uniqueStatuses.join(' / ');
-          mondayDurationDisplay = uniqueDurations.join(' / ');
-          varianceReason        = uniqueReasons.join('; ');
-        } else {
-          // At least one record reconciles — record it as No Variance
-          // Still capture what Monday showed so the row is informative
-          var passingRec = mondayRecs.find(function(mr) {
-            return _applyIlcVarianceRule(dayIlcRec, mr).variance !== 'Yes';
-          }) || mondayRecs[0];
-          mondayStatusDisplay   = passingRec.status   || '';
-          mondayDurationDisplay = passingRec.duration || '';
+        var chk = _applyIlcVarianceRule(dayIlcRec, mondayRec);
+        if (chk.variance === 'Yes') {
+          varianceFlag   = 'Yes';
+          varianceReason = chk.reason;
         }
       }
 
