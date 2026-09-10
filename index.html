@@ -8863,6 +8863,15 @@ async function detectIlcVariances() {
         return;
       }
 
+      // Skip weekend dates — ILC only clocks Mon–Fri; a Saturday/Sunday row in
+      // Monday attendance (e.g. a "Rest Day" on a weekend) must never be matched
+      // against an ILC weekday entry.
+      var _dow = new Date(dateStr + 'T00:00:00Z').getUTCDay(); // 0=Sun, 6=Sat
+      if (_dow === 0 || _dow === 6) {
+        _dbg('  STEP3 SKIP (weekend date) serial=' + serial + ' dateISO=' + dateStr + ' dow=' + _dow + ' status=' + (r.status||''));
+        return;
+      }
+
       // Skip exact duplicate serial+date+status docs from re-uploads
       var dedupKey = serial + '|' + dateStr + '|' + (r.status || '');
       if (_monDedup[dedupKey]) {
