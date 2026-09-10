@@ -3280,9 +3280,11 @@
         <div class="nav-item" data-page="role-maintenance">
           <span class="nav-icon">🔑</span> Role Maintenance
         </div>
-        <div class="nav-item" data-page="discrepancy-list">
-          <span class="nav-icon">⚠️</span> Discrepancy List
-        </div>
+      </div>
+
+      <!-- DISCREPANCY LIST entity (admin-only) -->
+      <div class="nav-section" id="discrepancy-nav-section" style="display:none;">
+        <div class="nav-label">Discrepancy List</div>
         <!-- Detect Variances collapsible folder -->
         <div class="nav-parent" id="nav-parent-detect" onclick="toggleNavParent('detect')">
           <span class="nav-icon">🔍</span> Detect Variances
@@ -3694,10 +3696,10 @@
           <div class="section-subtitle">Detect WFH compliance variances between Monday.com attendance and employee WFH schedules.</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <button class="btn btn-primary btn-sm" onclick="detectWfhVariances()">🔍 Detect Variances</button>
-          <button class="btn btn-danger btn-sm"  onclick="clearWfhVariances()">🗑 Clear Variances</button>
-          <button class="btn btn-ghost btn-sm"   onclick="notifyWfhVariances()">📧 Notify Employees</button>
-          <button class="btn btn-ghost btn-sm"   onclick="loadWfhVariance(true)">↻ Refresh</button>
+          <button class="btn btn-primary btn-sm" id="wfh-detect-btn" onclick="detectWfhVariances()">🔍 Detect Variances</button>
+          <button class="btn btn-danger btn-sm"  id="wfh-clear-btn"  onclick="clearWfhVariances()">🗑 Clear Variances</button>
+          <button class="btn btn-ghost btn-sm"   id="wfh-notify-btn" onclick="notifyWfhVariances()">📧 Notify Employees</button>
+          <button class="btn btn-ghost btn-sm"   id="wfh-refresh-btn" onclick="loadWfhVariance(true)">↻ Refresh</button>
         </div>
       </div>
       <div class="page-toolbar">
@@ -3709,8 +3711,15 @@
           <option>July</option><option>August</option><option>September</option>
           <option>October</option><option>November</option><option>December</option>
         </select>
-        <select id="wfh-var-name"   onchange="filterWfhVariance()"><option value="">Name (All)</option></select>
-        <select id="wfh-var-serial" onchange="filterWfhVariance()"><option value="">IBM Serial No. (All)</option></select>
+        <select id="wfh-var-name"     onchange="filterWfhVariance()"><option value="">Name (All)</option></select>
+        <select id="wfh-var-serial"   onchange="filterWfhVariance()"><option value="">IBM Serial No. (All)</option></select>
+        <select id="wfh-var-variance" onchange="filterWfhVariance()">
+          <option value="">Variance (All)</option>
+          <option>Daily Variance</option>
+          <option>Weekly Variance</option>
+          <option>No Status</option>
+          <option>Unscheduled</option>
+        </select>
         <input type="text" id="wfh-var-search" placeholder="Search name or serial…" oninput="filterWfhVariance()" />
       </div>
       <div id="wfh-var-body">
@@ -3721,9 +3730,16 @@
               <th>WFH Day 1</th><th>WFH Day 2</th>
               <th>Date</th><th>Monday Status</th><th>Monday Duration</th>
               <th>Weekly Onsite Count</th><th>Variance</th><th>Reason</th>
+              <th style="text-align:center;">
+                <label class="vt-toggle" title="Tag / untag all visible rows" style="cursor:pointer;display:inline-block;">
+                  <input type="checkbox" id="wfh-tag-all-chk" onchange="_toggleAllWfhTags(this)">
+                  <span class="vt-slider"></span>
+                </label>
+                <div style="font-size:10px;color:var(--muted);margin-top:3px;font-weight:700;letter-spacing:0.4px;">TAG ALL</div>
+              </th>
             </tr></thead>
             <tbody id="wfh-var-tbody">
-              <tr><td colspan="11" style="text-align:center;color:var(--muted);padding:32px;">Click "Detect Variances" to analyse records for the selected month.</td></tr>
+              <tr><td colspan="12" style="text-align:center;color:var(--muted);padding:32px;">Click "Detect Variances" to analyse records for the selected month.</td></tr>
             </tbody>
           </table>
         </div>
@@ -3739,10 +3755,10 @@
           <div class="section-subtitle">Detect variances between Monday.com attendance and ILC clockings.</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-          <button class="btn btn-primary btn-sm" onclick="detectIlcVariances()">🔍 Detect Variances</button>
-          <button class="btn btn-danger btn-sm"  onclick="clearIlcVariances()">🗑 Clear Variances</button>
-          <button class="btn btn-ghost btn-sm"   onclick="notifyIlcVariances()">📧 Notify Employees</button>
-          <button class="btn btn-ghost btn-sm"   onclick="loadIlcVariance(true)">↻ Refresh</button>
+          <button class="btn btn-primary btn-sm" id="ilc-detect-btn"  onclick="detectIlcVariances()">🔍 Detect Variances</button>
+          <button class="btn btn-danger btn-sm"  id="ilc-clear-btn"   onclick="clearIlcVariances()">🗑 Clear Variances</button>
+          <button class="btn btn-ghost btn-sm"   id="ilc-notify-btn"  onclick="notifyIlcVariances()">📧 Notify Employees</button>
+          <button class="btn btn-ghost btn-sm"   id="ilc-refresh-btn" onclick="loadIlcVariance(true)">↻ Refresh</button>
         </div>
       </div>
       <div class="page-toolbar">
@@ -4600,17 +4616,41 @@ function handleAuthState(user) {
       }
       // 2. Check pendingRoles collection (set via Role Maintenance page)
       if (user.email) {
-        return _fbDb.collection('pendingRoles').doc(user.email.toLowerCase()).get()
+        var emailLower = user.email.toLowerCase();
+        return _fbDb.collection('pendingRoles').doc(emailLower).get()
           .then(function(pending) {
             if (pending.exists) {
               var data = pending.data();
               return profileRef.set({ role: data.role, mustChangePassword: !!data.mustChangePassword, talentId: '', email: user.email || '' })
                 .then(function() {
-                  return _fbDb.collection('pendingRoles').doc(user.email.toLowerCase()).delete();
+                  return _fbDb.collection('pendingRoles').doc(emailLower).delete();
                 })
                 .then(function() { return profileRef.get(); });
             }
-            return profile;
+            // 3. Check if document exists under user's email doc ID (created via Masterlist sync)
+            return _fbDb.collection('users').doc(emailLower).get().then(function(emailDoc) {
+              if (emailDoc.exists) {
+                var emailData = emailDoc.data();
+                return profileRef.set(Object.assign({}, emailData, { email: user.email || '' }), { merge: true })
+                  .then(function() { return _fbDb.collection('users').doc(emailLower).delete(); })
+                  .then(function() { return profileRef.get(); });
+              }
+              // 4. Check masterlist for this user's email
+              return _fbDb.collection('masterlist').where('email', '==', emailLower).limit(1).get().then(function(mlSnap) {
+                if (!mlSnap.empty) {
+                  var ml = mlSnap.docs[0].data();
+                  return profileRef.set({
+                    email: user.email || '',
+                    name: ml.name || '',
+                    talentId: ml.ibmSerialNo || '',
+                    ibmSerialNo: ml.ibmSerialNo || '',
+                    role: 'user',
+                    mustChangePassword: false
+                  }).then(function() { return profileRef.get(); });
+                }
+                return profile;
+              });
+            });
           });
       }
     }
@@ -4631,6 +4671,7 @@ function handleAuthState(user) {
     var isAdmin   = role === 'admin';
     var isAuditor = role === 'audit';
     document.getElementById('admin-nav-section').style.display              = isAdmin   ? '' : 'none';
+    document.getElementById('discrepancy-nav-section').style.display        = isAdmin   ? '' : 'none';
     document.getElementById('attendance-nav-section').style.display         = isAdmin   ? '' : 'none';
     document.getElementById('auditor-nav-section').style.display            = isAuditor ? '' : 'none';
     document.getElementById('auditor-attendance-nav-section').style.display = isAuditor ? '' : 'none';
@@ -5174,6 +5215,10 @@ async function saveOnboardEmployee() {
       serviceLine: sl, status: 'Active',
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    // Auto-create/sync user profile document in users/{uid} (or users/{email})
+    _syncUsersFromMasterlist([{ ibmSerialNo: serial, name: name, email: email }]).catch(function(e) {
+      console.warn('Auto-provision user profile error:', e);
+    });
     closeModal('modal-onboard-employee');
     showToast('Employee onboarded successfully.', '✅');
     if (currentPage === 'masterlist') loadMasterlist();
@@ -5248,7 +5293,7 @@ function loadServiceLines() {
         '<td>' + escapeHtml(sl.description || '') + '</td>' +
         '<td style="white-space:nowrap;">' +
           '<button class="btn btn-ghost btn-sm" onclick="openAddServiceLineModal(\'' + d.id + '\',{code:\'' + escapeHtml(sl.code||'') + '\',name:\'' + escapeHtml(sl.name||'') + '\',description:\'' + escapeHtml((sl.description||'').replace(/'/g,"\\\'")) + '\'})">Edit</button> ' +
-          '<button class="btn btn-danger btn-sm" onclick="deleteServiceLine(\'' + d.id + '\')">Delete</button>' +
+          '<button class="btn btn-danger btn-sm" onclick="deleteServiceLine(\'' + d.id + '\',this)">Delete</button>' +
         '</td></tr>';
     });
     tbody.innerHTML = rows;
@@ -5258,13 +5303,17 @@ function loadServiceLines() {
   });
 }
 
-async function deleteServiceLine(docId) {
+async function deleteServiceLine(docId, btn) {
   if (!confirm('Delete this service line?')) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
   try {
     await _fbDb.collection('serviceLines').doc(docId).delete();
     showToast('Service line deleted.', '🗑️');
     loadServiceLines();
-  } catch(err) { showToast('Failed to delete.'); }
+  } catch(err) {
+    showToast('Failed to delete.', '❌');
+    if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -5319,19 +5368,23 @@ function _renderMasterlist() {
       '<td>' + statusPill + '</td>' +
       '<td style="white-space:nowrap;">' +
         '<button class="btn btn-ghost btn-sm" onclick="openEditMasterlistModal(\'' + e._id + '\')" style="margin-right:4px;">✏️ Edit</button>' +
-        '<button class="btn btn-ghost btn-sm" onclick="toggleMasterlistStatus(\'' + e._id + '\',\'' + escapeHtml(e.status||'Active') + '\')">' + (e.status === 'Active' ? 'Set Inactive' : 'Set Active') + '</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="toggleMasterlistStatus(\'' + e._id + '\',\'' + escapeHtml(e.status||'Active') + '\',this)">' + (e.status === 'Active' ? 'Set Inactive' : 'Set Active') + '</button>' +
       '</td></tr>';
   });
   tbody.innerHTML = rows;
 }
 
-async function toggleMasterlistStatus(docId, currentStatus) {
+async function toggleMasterlistStatus(docId, currentStatus, btn) {
   var newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
+  if (btn) { btn.disabled = true; btn.textContent = 'Updating…'; }
   try {
     await _fbDb.collection('masterlist').doc(docId).update({ status: newStatus });
     showToast('Status updated to ' + newStatus + '.', '✅');
     loadMasterlist();
-  } catch(err) { showToast('Failed to update status.'); }
+  } catch(err) {
+    showToast('Failed to update status.', '❌');
+    if (btn) { btn.disabled = false; btn.textContent = currentStatus === 'Active' ? 'Set Inactive' : 'Set Active'; }
+  }
 }
 
 function openEditMasterlistModal(docId) {
@@ -5364,7 +5417,7 @@ async function saveMasterlistEdit() {
   errEl.textContent = '';
   if (!name && !serial) { errEl.textContent = 'Name or IBM Serial No. is required.'; return; }
 
-  btn.disabled = true;
+  btn.disabled = true; btn.textContent = 'Saving…';
   try {
     var update = {
       name:        name,
@@ -5375,6 +5428,10 @@ async function saveMasterlistEdit() {
       updatedAt:   firebase.firestore.FieldValue.serverTimestamp()
     };
     await _fbDb.collection('masterlist').doc(docId).update(update);
+    // Auto-create/sync user profile document in users/{uid}
+    _syncUsersFromMasterlist([update]).catch(function(e) {
+      console.warn('Auto-sync user profile error:', e);
+    });
     // Update in-memory record too
     var rec = _masterlistRecords.find(function(r) { return r._id === docId; });
     if (rec) Object.assign(rec, update);
@@ -5385,7 +5442,7 @@ async function saveMasterlistEdit() {
     errEl.textContent = 'Failed to save: ' + (err.message || err);
     console.error(err);
   }
-  btn.disabled = false;
+  btn.disabled = false; btn.textContent = 'Save';
 }
 
 // ──────────────────────────────────────────────
@@ -5465,46 +5522,60 @@ function _renderRoleMaintenance() {
       '<td>' + pill                      + '</td>' +
       '<td style="white-space:nowrap;">' +
         '<button class="btn btn-ghost btn-sm" onclick="openEditRoleModal(' + "'" + escapeHtml(r.uid) + "','" + escapeHtml(r.role) + "'" + ')">Edit</button> ' +
-        '<button class="btn btn-danger btn-sm" onclick="removeRole(' + "'" + escapeHtml(r.uid) + "'" + ')">Remove</button>' +
+        '<button class="btn btn-danger btn-sm" onclick="removeRole(' + "'" + escapeHtml(r.uid) + "'" + ',this)">Remove</button>' +
       '</td>' +
     '</tr>';
   }).join('');
 }
 
 async function openAddRoleModal() {
+  var saveBtn = document.getElementById('role-modal-save-btn');
   document.getElementById('role-modal-title').textContent = 'Add User Role';
   document.getElementById('role-modal-error').textContent = '';
-  document.getElementById('role-modal-save-btn').dataset.uid = '';
+  saveBtn.dataset.uid = '';
 
-  // Populate employee dropdown from masterlist — exclude already-assigned emails
-  var assignedEmails = new Set(_roleRecords.map(function(r) { return r.email.toLowerCase(); }));
-  var snap = await _fbDb.collection('masterlist').get();
-  var emps = [];
-  snap.forEach(function(d) {
-    var e = d.data();
-    // Include all active employees; exclude only those already assigned by email
-    if (!e.name && !e.email) return;
-    if (e.email && assignedEmails.has(e.email.toLowerCase())) return;
-    emps.push(e);
-  });
-  emps.sort(function(a, b) {
-    var nA = _lastNameKey(a.name), nB = _lastNameKey(b.name);
-    return nA < nB ? -1 : nA > nB ? 1 : 0;
-  });
+  // Show modal immediately so the user gets instant feedback
   var sel = document.getElementById('role-modal-employee');
-  sel.innerHTML = '<option value="">— Select employee —</option>' +
-    emps.map(function(e) {
-      // value = email if present, else ibmSerialNo prefixed so we know it's a serial
-      var val = e.email || ('__serial__' + (e.ibmSerialNo || e.name));
-      var label = e.email
-        ? escapeHtml(e.name || e.email) + ' (' + escapeHtml(e.email) + ')'
-        : escapeHtml(e.name || e.ibmSerialNo) + ' — no email on file';
-      return '<option value="' + escapeHtml(val) + '">' + label + '</option>';
-    }).join('');
-  sel.disabled = false;
+  sel.innerHTML = '<option value="">Loading employees…</option>';
+  sel.disabled = true;
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Save';
   document.getElementById('role-modal-email-row').style.display = 'none';
   document.getElementById('role-modal-email-input').value = '';
   document.getElementById('role-modal-overlay').classList.add('open');
+
+  // Populate employee dropdown from masterlist — exclude already-assigned emails
+  try {
+    var assignedEmails = new Set(_roleRecords.map(function(r) { return r.email.toLowerCase(); }));
+    var snap = await _fbDb.collection('masterlist').get();
+    var emps = [];
+    snap.forEach(function(d) {
+      var e = d.data();
+      // Include all active employees; exclude only those already assigned by email
+      if (!e.name && !e.email) return;
+      if (e.email && assignedEmails.has(e.email.toLowerCase())) return;
+      emps.push(e);
+    });
+    emps.sort(function(a, b) {
+      var nA = _lastNameKey(a.name), nB = _lastNameKey(b.name);
+      return nA < nB ? -1 : nA > nB ? 1 : 0;
+    });
+    sel.innerHTML = '<option value="">— Select employee —</option>' +
+      emps.map(function(e) {
+        // value = email if present, else ibmSerialNo prefixed so we know it's a serial
+        var val = e.email || ('__serial__' + (e.ibmSerialNo || e.name));
+        var label = e.email
+          ? escapeHtml(e.name || e.email) + ' (' + escapeHtml(e.email) + ')'
+          : escapeHtml(e.name || e.ibmSerialNo) + ' — no email on file';
+        return '<option value="' + escapeHtml(val) + '">' + label + '</option>';
+      }).join('');
+    sel.disabled = false;
+    saveBtn.disabled = false;
+  } catch(err) {
+    sel.innerHTML = '<option value="">Failed to load employees</option>';
+    document.getElementById('role-modal-error').textContent = 'Could not load employee list: ' + (err.message || err);
+    console.error('openAddRoleModal:', err);
+  }
 }
 
 function openEditRoleModal(uid, currentRole) {
@@ -5554,6 +5625,7 @@ async function saveRole() {
   if (!document.getElementById('role-modal-employee').value) { errEl.textContent = 'Please select an employee.'; return; }
 
   btn.disabled = true;
+  btn.textContent = 'Saving…';
   try {
     if (editUid) {
       // Edit existing — just update role field
@@ -5571,6 +5643,7 @@ async function saveRole() {
         closeRoleModal();
         loadRoleMaintenance();
         btn.disabled = false;
+        btn.textContent = 'Save';
         return;
       }
       showToast('Role assigned.', '✅');
@@ -5582,15 +5655,93 @@ async function saveRole() {
     console.error(err);
   }
   btn.disabled = false;
+  btn.textContent = 'Save';
 }
 
-async function removeRole(uid) {
+// ── Auto-provision / sync users/{uid} documents from Masterlist / Master Sync
+async function _syncUsersFromMasterlist(records) {
+  if (!_fbDb || !records || !records.length) return;
+  try {
+    var usersSnap = await _fbDb.collection('users').get();
+    var emailToDoc = {};
+    var serialToDoc = {};
+    usersSnap.forEach(function(d) {
+      var u = d.data();
+      if (u.email) emailToDoc[(u.email || '').toLowerCase().trim()] = { id: d.id, data: u };
+      if (u.talentId) serialToDoc[(u.talentId || '').toUpperCase().trim()] = { id: d.id, data: u };
+      if (u.ibmSerialNo) serialToDoc[(u.ibmSerialNo || '').toUpperCase().trim()] = { id: d.id, data: u };
+    });
+
+    var batch = _fbDb.batch();
+    var batchCount = 0;
+    var BATCH_MAX = 490;
+    var seenKeys = new Set();
+
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i] || {};
+      var email = (r.email || '').trim().toLowerCase();
+      var serial = (r.ibmSerialNo || r.serial || r.talentId || '').trim().toUpperCase();
+      var name = _fixDotEmailName(r.name || '');
+
+      if (!email && !serial) continue;
+      var dedupeKey = (email || '') + '|' + (serial || '');
+      if (seenKeys.has(dedupeKey)) continue;
+      seenKeys.add(dedupeKey);
+
+      var existing = (email && emailToDoc[email]) || (serial && serialToDoc[serial]);
+      if (existing) {
+        // Update document if fields are missing or changed
+        var patch = {};
+        if (name && !existing.data.name) patch.name = name;
+        if (email && !existing.data.email) patch.email = email;
+        if (serial && !existing.data.talentId) patch.talentId = serial;
+        if (serial && !existing.data.ibmSerialNo) patch.ibmSerialNo = serial;
+        if (Object.keys(patch).length > 0) {
+          batch.update(_fbDb.collection('users').doc(existing.id), patch);
+          batchCount++;
+        }
+      } else {
+        // Create new user document
+        var newDocRef = email ? _fbDb.collection('users').doc(email) : _fbDb.collection('users').doc();
+        batch.set(newDocRef, {
+          email: email || '',
+          name: name || '',
+          talentId: serial || '',
+          ibmSerialNo: serial || '',
+          role: 'user',
+          mustChangePassword: false,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        batchCount++;
+      }
+
+      if (batchCount >= BATCH_MAX) {
+        await batch.commit();
+        batch = _fbDb.batch();
+        batchCount = 0;
+      }
+    }
+
+    if (batchCount > 0) {
+      await batch.commit();
+    }
+  } catch(err) {
+    console.warn('Error syncing users collection from masterlist:', err);
+  }
+}
+
+async function removeRole(uid, btn) {
   if (!confirm('Remove this user\'s role? They will lose admin/auditor access on next sign-in.')) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Removing…'; }
   try {
     await _fbDb.collection('users').doc(uid).update({ role: 'user' });
     showToast('Role removed.', '✅');
     loadRoleMaintenance();
-  } catch(err) { showToast('Failed to remove role.', '❌'); console.error(err); }
+  } catch(err) {
+    showToast('Failed to remove role.', '❌');
+    console.error(err);
+    if (btn) { btn.disabled = false; btn.textContent = 'Remove'; }
+  }
 }
 
 // ──────────────────────────────────────────────
@@ -5649,7 +5800,13 @@ function handleMasterlistUpload(event) {
         { label: 'Service Line',   key: 'serviceLine',  aliases: ['service line','serviceline','sl','service line code'] },
         { label: 'Status',         key: 'status',       aliases: ['status','employment status'], default: 'Active' }
       ],
-      onSuccess: function() { loadMasterlist(); loadOnboardRecords(); }
+      onSuccess: function(uploadedRows) {
+        loadMasterlist();
+        loadOnboardRecords();
+        _syncUsersFromMasterlist(uploadedRows).catch(function(e) {
+          console.warn('Auto-create user profiles error:', e);
+        });
+      }
     };
     _openUploadPreview(rows, schema);
   });
@@ -5761,8 +5918,8 @@ function _renderWfhSchedule() {
       '<td>' + escapeHtml(r.daysSelection || (r.wfhDay1 ? (r.wfhDay1 + (r.wfhDay2 ? ', ' + r.wfhDay2 : '')) : '') || '') + '</td>' +
       '<td>' + statusPill + '</td>' +
       '<td style="white-space:nowrap;">' +
-        '<button class="btn btn-ghost btn-sm" onclick="toggleWfhStatus(\'' + r._id + '\',\'' + escapeHtml(r.wfhStatus || 'Active') + '\')" style="margin-right:4px;">' + (isActive ? 'Set Inactive' : 'Set Active') + '</button>' +
-        '<button class="btn btn-danger btn-sm" onclick="deleteWfhRecord(\'' + r._id + '\')">Delete</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="toggleWfhStatus(\'' + r._id + '\',\'' + escapeHtml(r.wfhStatus || 'Active') + '\',this)" style="margin-right:4px;">' + (isActive ? 'Set Inactive' : 'Set Active') + '</button>' +
+        '<button class="btn btn-danger btn-sm" onclick="deleteWfhRecord(\'' + r._id + '\',this)">Delete</button>' +
       '</td>' +
       '</tr>';
   }).join('');
@@ -5783,22 +5940,30 @@ function loadWfhSchedule() {
   });
 }
 
-async function toggleWfhStatus(docId, currentStatus) {
+async function toggleWfhStatus(docId, currentStatus, btn) {
   var newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
+  if (btn) { btn.disabled = true; btn.textContent = 'Updating…'; }
   try {
     await _fbDb.collection('wfhSchedule').doc(docId).update({ wfhStatus: newStatus });
     showToast('WFH status updated to ' + newStatus + '.', '✅');
     loadWfhSchedule();
-  } catch(err) { showToast('Failed to update status.', '❌'); }
+  } catch(err) {
+    showToast('Failed to update status.', '❌');
+    if (btn) { btn.disabled = false; btn.textContent = currentStatus === 'Active' ? 'Set Inactive' : 'Set Active'; }
+  }
 }
 
-async function deleteWfhRecord(docId) {
+async function deleteWfhRecord(docId, btn) {
   if (!confirm('Delete this WFH record?')) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
   try {
     await _fbDb.collection('wfhSchedule').doc(docId).delete();
     showToast('WFH record deleted.', '🗑️');
     loadWfhSchedule();
-  } catch(err) { showToast('Failed to delete.'); }
+  } catch(err) {
+    showToast('Failed to delete.', '❌');
+    if (btn) { btn.disabled = false; btn.textContent = 'Delete'; }
+  }
 }
 
 function openResetWfhModal() {
@@ -6583,6 +6748,9 @@ async function runMasterSync() {
     if (monPatched > 0) parts.push(monPatched + ' Monday record'     + (monPatched  !== 1 ? 's' : '') + ' patched');
     if (mlPatched  > 0) parts.push(mlPatched  + ' masterlist record' + (mlPatched   !== 1 ? 's' : '') + ' patched');
     if (newMlCount > 0) parts.push(newMlCount + ' new masterlist entr' + (newMlCount !== 1 ? 'ies' : 'y') + ' added');
+    // Auto-create / sync user documents in users collection
+    await _syncUsersFromMasterlist(Object.values(empMap));
+
     showToast('Master Sync complete — ' + parts.join(', ') + '.', '✅');
     loadMasterlist();
 
@@ -7019,6 +7187,12 @@ async function confirmUpload() {
   var schema = _uploadSchema;
   var rows   = _uploadRows;
 
+  // Disable both upload buttons immediately so they can't be double-clicked
+  var uploadConfirmBtn = document.getElementById('upload-confirm-btn');
+  var finalConfirmBtn  = document.getElementById('upload-final-confirm-btn');
+  if (uploadConfirmBtn) { uploadConfirmBtn.disabled = true; uploadConfirmBtn.textContent = 'Uploading…'; }
+  if (finalConfirmBtn)  { finalConfirmBtn.disabled  = true; finalConfirmBtn.textContent  = 'Uploading…'; }
+
   // ILC pivot: collapse multi-activity rows into one per employee+weekending
   if (schema.pivotIlc) {
     rows = _pivotIlcRows(rows);
@@ -7259,10 +7433,12 @@ function closeDeleteAttReportModal() {
 }
 
 function confirmDeleteAttReport() {
+  var btn   = document.getElementById('delete-att-report-confirm-btn');
   var errEl = document.getElementById('delete-att-report-error');
   errEl.textContent = '';
   var ids = _deleteAttReportIds.slice();
   if (!ids.length) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
 
   var isIlc      = _deleteAttReportType === 'ilc';
   var collection = isIlc ? 'monthlyAttendance' : 'mondayAttendance';
@@ -7387,11 +7563,38 @@ function _renderDiscrepancyList() {
 // ──────────────────────────────────────────────
 
 var _wfhVarianceRecords = [];
+// Set of Firestore doc IDs that the admin has toggled "Tag Variance" for in this session
+var _wfhTaggedIds = new Set();
+// IDs currently visible after all filters — updated on every render
+var _wfhFilteredIds = [];
 
 // ── Helper: parse "Wednesday, Friday" → { day1: "wednesday", day2: "friday" }
 function _parseDaysSelection(str) {
   var parts = (str || '').split(',').map(function(s) { return s.trim().toLowerCase(); });
   return { day1: parts[0] || '', day2: parts[1] || '' };
+}
+
+// ── Helper: capitalise first letter of a string (camel-case day names)
+function _capitaliseDay(s) {
+  if (!s) return '';
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
+// ── Helper: fix names derived from 3-part dot email local-parts.
+// Monday.com exports can carry the email local-part as the "name" column.
+// Pattern: NNNN.OOOO.PPPP  (exactly 3 dot-separated segments, no spaces)
+// Expected format after fix: OOOO PPPP, NNNN  (LAST = OOOO PPPP, FIRST = NNNN)
+function _fixDotEmailName(raw) {
+  if (!raw) return raw;
+  var s = raw.trim();
+  // Already has a comma → already in "LAST, FIRST" form, leave it
+  if (s.indexOf(',') !== -1) return s;
+  // Must be exactly 3 dot-segments, no spaces, no @
+  var parts = s.split('.');
+  if (parts.length !== 3 || s.indexOf(' ') !== -1 || s.indexOf('@') !== -1) return s;
+  var first = parts[0].toUpperCase();
+  var last  = (parts[1] + ' ' + parts[2]).toUpperCase();
+  return last + ', ' + first;
 }
 
 // ── Helper: return lowercase day-of-week string from a date string (YYYY-MM-DD)
@@ -7444,6 +7647,8 @@ function _isHalfDayStatus(status) {
 
 function loadWfhVariance(forceServer) {
   if (!_fbDb) return;
+  var refreshBtn = document.getElementById('wfh-refresh-btn');
+  if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = '↻ Loading…'; }
   if (forceServer) { _wfhVarianceRecords = []; }
   _populateYearDropdown('wfh-var-year', _wfhVarianceRecords);
   _renderWfhVariance();
@@ -7455,61 +7660,168 @@ function loadWfhVariance(forceServer) {
     _populateFilterDropdown('wfh-var-name',   _wfhVarianceRecords, 'name',        'Name (All)');
     _populateFilterDropdown('wfh-var-serial', _wfhVarianceRecords, 'ibmSerialNo', 'IBM Serial No. (All)');
     _renderWfhVariance();
-  }).catch(function(err) { console.error(err); });
+    if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '↻ Refresh'; }
+  }).catch(function(err) {
+    console.error(err);
+    if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '↻ Refresh'; }
+  });
 }
 
 function filterWfhVariance() { _renderWfhVariance(); }
 
+// Derive the human-readable variance label for a row — single source of truth
+// used by both the filter and the badge renderer.
+function _wfhVarianceLabel(r) {
+  var stored = (r.variance || r.varType || '').trim();
+  var status = (r.mondayStatus || '').trim();
+
+  // If stored variance is explicitly 'No Status', honour it
+  if (stored === 'No Status') return 'No Status';
+
+  // A blank mondayStatus means we have no attendance data — always No Status,
+  // regardless of what variance type was stored (handles stale records written
+  // before the No Status detection rule was added).
+  if (!status) return 'No Status';
+
+  if (status === 'Remote (Unscheduled)' || status === 'Unscheduled') return 'Unscheduled';
+  if (status === 'Remote (Scheduled)') {
+    var dow = _getDayOfWeek(r.date || '');
+    var d1  = (r.wfhDay1 || '').toLowerCase();
+    var d2  = (r.wfhDay2 || '').toLowerCase();
+    if (dow && dow !== d1 && dow !== d2) return 'Daily Variance';
+  }
+  if (stored === 'Weekly Variance') return 'Weekly Variance';
+  if (stored === 'Daily Variance')  return 'Daily Variance';
+  return 'No Variance';
+}
+
 function _renderWfhVariance() {
   var tbody = document.getElementById('wfh-var-tbody');
   if (!tbody) return;
-  var year   = (document.getElementById('wfh-var-year')   || {}).value || '';
-  var month  = (document.getElementById('wfh-var-month')  || {}).value || '';
-  var name   = (document.getElementById('wfh-var-name')   || {}).value || '';
-  var serial = (document.getElementById('wfh-var-serial') || {}).value || '';
-  var search = ((document.getElementById('wfh-var-search') || {}).value || '').toLowerCase().trim();
+  var year     = (document.getElementById('wfh-var-year')     || {}).value || '';
+  var month    = (document.getElementById('wfh-var-month')    || {}).value || '';
+  var name     = (document.getElementById('wfh-var-name')     || {}).value || '';
+  var serial   = (document.getElementById('wfh-var-serial')   || {}).value || '';
+  var variance = (document.getElementById('wfh-var-variance') || {}).value || '';
+  var search   = ((document.getElementById('wfh-var-search')  || {}).value || '').toLowerCase().trim();
+
   var filtered = _wfhVarianceRecords.filter(function(r) {
-    if (year   && String(r.year  || (r.date || '').substring(0,4)) !== year)  return false;
-    if (month  && (r.month || '') !== month)                                   return false;
-    if (name   && (r.name  || '') !== name)                                    return false;
-    if (serial && (r.ibmSerialNo || '') !== serial)                            return false;
-    if (search && !(r.name || '').toLowerCase().includes(search) &&
-                  !(r.ibmSerialNo || '').toLowerCase().includes(search))       return false;
+    // Skip No Variance records — only actual variances should appear in the list
+    if ((r.variance || r.varType || '') === 'No Variance') return false;
+    // Fix 2: skip records where ibmSerialNo, name, AND email are all blank
+    if (!(r.ibmSerialNo || '').trim() && !(r.name || '').trim() && !(r.email || '').trim()) return false;
+    if (year     && String(r.year  || (r.date || '').substring(0,4)) !== year)  return false;
+    if (month    && (r.month || '') !== month)                                   return false;
+    if (name     && (r.name  || '') !== name)                                    return false;
+    if (serial   && (r.ibmSerialNo || '') !== serial)                            return false;
+    if (variance && _wfhVarianceLabel(r) !== variance)                           return false;
+    if (search   && !(r.name || '').toLowerCase().includes(search) &&
+                    !(r.ibmSerialNo || '').toLowerCase().includes(search))       return false;
     return true;
   });
+
+  // Fix 1: deduplicate — same serial + date + variance type is considered the same record
+  var seen = {};
+  filtered = filtered.filter(function(r) {
+    var key = (r.ibmSerialNo || '') + '|' + (r.date || '') + '|' + (r.variance || r.varType || '');
+    if (seen[key]) return false;
+    seen[key] = true;
+    return true;
+  });
+
   filtered.sort(function(a, b) {
     var dA = new Date(a.date || ''), dB = new Date(b.date || '');
     var tDiff = (isNaN(dA) ? 0 : dA.getTime()) - (isNaN(dB) ? 0 : dB.getTime());
     if (tDiff !== 0) return tDiff;
     return _lastNameKey(a.name) < _lastNameKey(b.name) ? -1 : 1;
   });
+
+  // Update the visible-IDs tracker for toggle-all
+  _wfhFilteredIds = filtered.map(function(r) { return r._id || ''; }).filter(Boolean);
+
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:32px;">No records match the selected filters.</td></tr>';
+    _wfhFilteredIds = [];
+    tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:32px;">No records match the selected filters.</td></tr>';
+    _syncTagAllCheckbox();
     return;
   }
-  var VARIANCE_NONE    = '<span class="tag" style="background:rgba(74,222,128,0.08);color:#4ade80;border-color:rgba(74,222,128,0.25);font-size:11px;">No Variance</span>';
-  var VARIANCE_DAILY   = '<span class="tag" style="background:rgba(248,113,113,0.10);color:#f87171;border-color:rgba(248,113,113,0.30);font-size:11px;">Daily Variance</span>';
-  var VARIANCE_WEEKLY  = '<span class="tag" style="background:rgba(251,191,36,0.10);color:#fbbf24;border-color:rgba(251,191,36,0.30);font-size:11px;">Weekly Variance</span>';
-  function varianceBadge(v) {
-    if (v === 'Daily Variance')  return VARIANCE_DAILY;
-    if (v === 'Weekly Variance') return VARIANCE_WEEKLY;
-    return VARIANCE_NONE;
+
+  // Badge definitions
+  var BADGE_RED    = 'background:rgba(248,113,113,0.10);color:#f87171;border-color:rgba(248,113,113,0.30);';
+  var BADGE_YELLOW = 'background:rgba(251,191,36,0.10);color:#fbbf24;border-color:rgba(251,191,36,0.30);';
+  var BADGE_GREEN  = 'background:rgba(74,222,128,0.08);color:#4ade80;border-color:rgba(74,222,128,0.25);';
+  function _badge(label, style) {
+    return '<span class="tag" style="' + style + 'font-size:11px;">' + label + '</span>';
   }
+  // Render badge using the shared label helper
+  function varianceBadge(r) {
+    var label = _wfhVarianceLabel(r);
+    if (label === 'No Status')       return _badge('No Status',       BADGE_RED);
+    if (label === 'Unscheduled')     return _badge('Unscheduled',     BADGE_RED);
+    if (label === 'Daily Variance')  return _badge('Daily Variance',  BADGE_RED);
+    if (label === 'Weekly Variance') return _badge('Weekly Variance', BADGE_YELLOW);
+    return _badge('No Variance', BADGE_GREEN);
+  }
+
   tbody.innerHTML = filtered.map(function(r) {
+    // Fix 3: correct 3-part dot email names
+    var displayName = _fixDotEmailName(r.name || '');
+    // Fix 4: camel-case WFH days
+    var day1 = _capitaliseDay(r.wfhDay1 || '');
+    var day2 = _capitaliseDay(r.wfhDay2 || '');
+    // Fix 5: Tag Variance toggle
+    var docId   = escapeHtml(r._id || '');
+    var checked = _wfhTaggedIds.has(r._id || '') ? ' checked' : '';
+    var toggle  = '<label class="vt-toggle" title="Tag this variance for notification" style="cursor:pointer;">' +
+                  '<input type="checkbox"' + checked + ' onchange="_toggleWfhTag(\'' + docId + '\',this)">' +
+                  '<span class="vt-slider"></span></label>';
     return '<tr>' +
-      '<td>' + escapeHtml(r.ibmSerialNo        || '') + '</td>' +
-      '<td>' + escapeHtml(r.name               || '') + '</td>' +
-      '<td>' + escapeHtml(r.email              || '') + '</td>' +
-      '<td>' + escapeHtml(r.wfhDay1            || '') + '</td>' +
-      '<td>' + escapeHtml(r.wfhDay2            || '') + '</td>' +
-      '<td>' + escapeHtml(r.date               || '') + '</td>' +
-      '<td>' + escapeHtml(r.mondayStatus        || '') + '</td>' +
-      '<td>' + escapeHtml(r.mondayDuration      || '') + '</td>' +
+      '<td>' + escapeHtml(r.ibmSerialNo || '') + '</td>' +
+      '<td>' + escapeHtml(displayName)          + '</td>' +
+      '<td>' + escapeHtml(r.email       || '') + '</td>' +
+      '<td>' + escapeHtml(day1)                 + '</td>' +
+      '<td>' + escapeHtml(day2)                 + '</td>' +
+      '<td>' + escapeHtml(r.date        || '') + '</td>' +
+      '<td>' + escapeHtml(r.mondayStatus || '') + '</td>' +
+      '<td>' + escapeHtml(r.mondayDuration || '') + '</td>' +
       '<td style="text-align:center;">' + escapeHtml(String(r.weeklyOnsiteCount != null ? r.weeklyOnsiteCount : '')) + '</td>' +
-      '<td>' + varianceBadge(r.variance || r.varType || '') + '</td>' +
+      '<td>' + varianceBadge(r) + '</td>' +
       '<td>' + escapeHtml(r.reason || '') + '</td>' +
+      '<td style="text-align:center;">' + toggle + '</td>' +
       '</tr>';
   }).join('');
+  _syncTagAllCheckbox();
+}
+
+// Fix 5 helper: toggle a single doc id in the in-memory tag set
+function _toggleWfhTag(docId, checkbox) {
+  if (!docId) return;
+  if (checkbox.checked) {
+    _wfhTaggedIds.add(docId);
+  } else {
+    _wfhTaggedIds.delete(docId);
+  }
+  _syncTagAllCheckbox();
+}
+
+// Toggle-all: tag or untag every currently visible row
+function _toggleAllWfhTags(checkbox) {
+  var tag = checkbox.checked;
+  _wfhFilteredIds.forEach(function(id) {
+    if (tag) { _wfhTaggedIds.add(id); } else { _wfhTaggedIds.delete(id); }
+  });
+  // Re-render so individual row toggles reflect the new state
+  _renderWfhVariance();
+}
+
+// Keep the header "TAG ALL" checkbox in sync with individual row states
+function _syncTagAllCheckbox() {
+  var chk = document.getElementById('wfh-tag-all-chk');
+  if (!chk || !_wfhFilteredIds.length) return;
+  var allTagged = _wfhFilteredIds.every(function(id) { return _wfhTaggedIds.has(id); });
+  var noneTagged = _wfhFilteredIds.every(function(id) { return !_wfhTaggedIds.has(id); });
+  chk.checked = allTagged;
+  chk.indeterminate = !allTagged && !noneTagged;
 }
 
 async function detectWfhVariances() {
@@ -7517,6 +7829,8 @@ async function detectWfhVariances() {
   var year  = (document.getElementById('wfh-var-year')  || {}).value || '';
   var month = (document.getElementById('wfh-var-month') || {}).value || '';
 
+  var detectBtn = document.getElementById('wfh-detect-btn');
+  if (detectBtn) { detectBtn.disabled = true; detectBtn.textContent = '⏳ Processing…'; }
   showToast('Detecting variances…', '🔍');
   console.log('[WFH Detect] start — year:', year, 'month:', month);
 
@@ -7541,16 +7855,19 @@ async function detectWfhVariances() {
     });
     console.log('[WFH Detect] wfhMap keys:', Object.keys(wfhMap).length);
 
-    // Build in-memory Monday records — filter by year/month in-memory if selected
-    var mondayRecords = [];
-    mondaySnap.forEach(function(d) { mondayRecords.push(Object.assign({ _id: d.id }, d.data())); });
-    console.log('[WFH Detect] total Monday records before filter:', mondayRecords.length);
-    if (mondayRecords.length > 0) {
-      var sampleMon = mondayRecords[0];
+    // Build in-memory Monday records
+    // allMondayRecords — full set, used for accurate weekly boundary lookups
+    // mondayRecords    — filtered by selected year/month, used for iteration (what to write)
+    var allMondayRecords = [];
+    mondaySnap.forEach(function(d) { allMondayRecords.push(Object.assign({ _id: d.id }, d.data())); });
+    console.log('[WFH Detect] total Monday records before filter:', allMondayRecords.length);
+    if (allMondayRecords.length > 0) {
+      var sampleMon = allMondayRecords[0];
       console.log('[WFH Detect] sample Monday record:', JSON.stringify({ ibmSerialNo: sampleMon.ibmSerialNo, date: sampleMon.date, status: sampleMon.status, year: sampleMon.year, month: sampleMon.month }));
     }
+    var mondayRecords = allMondayRecords;
     if (year || month) {
-      mondayRecords = mondayRecords.filter(function(r) {
+      mondayRecords = allMondayRecords.filter(function(r) {
         var ry = String(r.year || (r.date || '').substring(0,4));
         var rm = r.month || '';
         if (year  && ry !== year)   return false;
@@ -7586,17 +7903,28 @@ async function detectWfhVariances() {
       var varType = 'No Variance';
       var reason  = '';
 
+      // Rule 3a: no Monday.com status recorded — flag as No Status
+      if (!status) {
+        varType = 'No Status';
+        reason  = 'No Monday.com attendance status recorded';
+      }
+
       // Rule 3: daily WFH compliance
-      if (status === 'Remote (Scheduled)' && !isWfhDay) {
+      if (varType === 'No Variance' && status === 'Remote (Scheduled)' && !isWfhDay) {
         varType = 'Daily Variance';
         reason  = 'Remote (Scheduled) on a non-WFH day (' + dayOfWeek + ')';
-      } else if (status === 'Unscheduled') {
+      } else if (varType === 'No Variance' && (status === 'Remote (Unscheduled)' || status === 'Unscheduled')) {
         varType = 'Daily Variance';
         reason  = 'Unscheduled remote on ' + (isWfhDay ? 'WFH day' : 'non-WFH day') + ' (' + dayOfWeek + ')';
-      } else {
-        // Rule 4: weekly onsite count
+      }
+
+      // Rule 4: weekly onsite count — always evaluated independently of Rule 3.
+      // Use allMondayRecords so week boundaries are never truncated by the
+      // year/month filter selected at detect time.
+      // Weekly Variance only applied if no daily variance already found.
+      if (varType === 'No Variance') {
         var bounds      = _weekBoundaries(dateStr);
-        var weekRecs    = mondayRecords.filter(function(x) {
+        var weekRecs    = allMondayRecords.filter(function(x) {
           return x.ibmSerialNo === r.ibmSerialNo && _inWeek(x.date || '', bounds);
         });
         var onsiteCount = weekRecs.filter(function(x) { return x.status === 'Office'; }).length;
@@ -7607,14 +7935,14 @@ async function detectWfhVariances() {
         }
       }
 
-      // Count weekly onsite for display column
+      // Count weekly onsite for display column — also uses full record set
       var boundsDisp   = _weekBoundaries(dateStr);
-      var weekRecsDisp = mondayRecords.filter(function(x) {
+      var weekRecsDisp = allMondayRecords.filter(function(x) {
         return x.ibmSerialNo === r.ibmSerialNo && _inWeek(x.date || '', boundsDisp);
       });
       var weeklyOnsiteCount = weekRecsDisp.filter(function(x) { return x.status === 'Office'; }).length;
 
-      // Only write records with an actual variance
+      // Only write records with an actual variance or No Status
       if (varType !== 'No Variance') {
         var docRef = _fbDb.collection('wfhVariances').doc();
         batch.set(docRef, {
@@ -7647,9 +7975,11 @@ async function detectWfhVariances() {
     if (batchCount > 0) await batch.commit();
 
     showToast('WFH variance detection complete — ' + totalWritten + ' variance(s) written.', '✅');
+    if (detectBtn) { detectBtn.disabled = false; detectBtn.textContent = '🔍 Detect Variances'; }
     loadWfhVariance(true);
   } catch(err) {
     showToast('Error detecting variances: ' + (err.message || err), '❌');
+    if (detectBtn) { detectBtn.disabled = false; detectBtn.textContent = '🔍 Detect Variances'; }
     console.error('detectWfhVariances:', err);
   }
 }
@@ -7660,17 +7990,22 @@ async function clearWfhVariances() {
   var month = (document.getElementById('wfh-var-month') || {}).value || '';
   var label = (year && month) ? month + ' ' + year : 'all records';
   if (!confirm('Delete all WFH variance records for ' + label + '? This cannot be undone.')) return;
+  var clearBtn = document.getElementById('wfh-clear-btn');
+  if (clearBtn) { clearBtn.disabled = true; clearBtn.textContent = '⏳ Clearing…'; }
   showToast('Clearing variances…', '🗑');
   try {
+    // Always fetch from server so we delete what actually exists, not cached data
     var q = _fbDb.collection('wfhVariances');
     if (year)  q = q.where('year',  '==', year);
     if (month) q = q.where('month', '==', month);
-    var snap = await q.get();
+    var snap = await q.get({ source: 'server' });
+    var deletedIds = [];
     var BATCH_LIMIT = 490;
     var batch = _fbDb.batch();
     var count = 0;
     for (var i = 0; i < snap.docs.length; i++) {
       batch.delete(snap.docs[i].ref);
+      deletedIds.push(snap.docs[i].id);
       count++;
       if (count >= BATCH_LIMIT) {
         await batch.commit();
@@ -7679,16 +8014,172 @@ async function clearWfhVariances() {
       }
     }
     if (count > 0) await batch.commit();
+    // Update in-memory cache immediately — do NOT re-query (avoids stale cache reads)
+    if (year || month) {
+      _wfhVarianceRecords = _wfhVarianceRecords.filter(function(r) {
+        return deletedIds.indexOf(r._id) === -1;
+      });
+    } else {
+      _wfhVarianceRecords = [];
+    }
+    _wfhTaggedIds = new Set(Array.from(_wfhTaggedIds).filter(function(id) {
+      return deletedIds.indexOf(id) === -1;
+    }));
+    _populateYearDropdown('wfh-var-year', _wfhVarianceRecords);
+    _populateFilterDropdown('wfh-var-name',   _wfhVarianceRecords, 'name',        'Name (All)');
+    _populateFilterDropdown('wfh-var-serial', _wfhVarianceRecords, 'ibmSerialNo', 'IBM Serial No. (All)');
+    _renderWfhVariance();
     showToast('WFH variances cleared.', '✅');
-    loadWfhVariance(true);
+    if (clearBtn) { clearBtn.disabled = false; clearBtn.textContent = '🗑 Clear Variances'; }
   } catch(err) {
     showToast('Error clearing variances.', '❌');
+    if (clearBtn) { clearBtn.disabled = false; clearBtn.textContent = '🗑 Clear Variances'; }
     console.error(err);
   }
 }
 
-function notifyWfhVariances() {
-  showToast('Variances saved — employees can view them under My Variances.', 'ℹ️');
+// Fix 6: Notify Employees — respects active filters, only sends tagged variances,
+// writes to each employee's users/{uid}/variances sub-collection by matching on email.
+async function notifyWfhVariances() {
+  if (!_fbDb) return;
+  var notifyBtn = document.getElementById('wfh-notify-btn');
+  if (notifyBtn) { notifyBtn.disabled = true; notifyBtn.textContent = '⏳ Sending…'; }
+
+  // Gather the currently-rendered (filtered + deduplicated) records
+  var year   = (document.getElementById('wfh-var-year')   || {}).value || '';
+  var month  = (document.getElementById('wfh-var-month')  || {}).value || '';
+  var name   = (document.getElementById('wfh-var-name')   || {}).value || '';
+  var serial = (document.getElementById('wfh-var-serial') || {}).value || '';
+  var search = ((document.getElementById('wfh-var-search') || {}).value || '').toLowerCase().trim();
+
+  var filtered = _wfhVarianceRecords.filter(function(r) {
+    if (!(r.ibmSerialNo || '').trim() && !(r.name || '').trim() && !(r.email || '').trim()) return false;
+    if (year   && String(r.year  || (r.date || '').substring(0,4)) !== year)  return false;
+    if (month  && (r.month || '') !== month)                                   return false;
+    if (name   && (r.name  || '') !== name)                                    return false;
+    if (serial && (r.ibmSerialNo || '') !== serial)                            return false;
+    if (search && !(r.name || '').toLowerCase().includes(search) &&
+                  !(r.ibmSerialNo || '').toLowerCase().includes(search))       return false;
+    return true;
+  });
+
+  // Deduplicate (same logic as render)
+  var seen = {};
+  filtered = filtered.filter(function(r) {
+    var key = (r.ibmSerialNo || '') + '|' + (r.date || '') + '|' + (r.variance || r.varType || '');
+    if (seen[key]) return false;
+    seen[key] = true;
+    return true;
+  });
+
+  // Only keep tagged records
+  var tagged = filtered.filter(function(r) { return _wfhTaggedIds.has(r._id || ''); });
+
+  if (!tagged.length) {
+    showToast('No tagged variances in the current view. Toggle "Tag Variance" on the rows you want to send.', '⚠️');
+    if (notifyBtn) { notifyBtn.disabled = false; notifyBtn.textContent = '📧 Notify Employees'; }
+    return;
+  }
+
+  // Build email → uid lookup from the users collection
+  var usersSnap = await _fbDb.collection('users').get().catch(function(e) {
+    showToast('Could not load user accounts: ' + (e.message || e), '❌');
+    return null;
+  });
+  if (!usersSnap) {
+    if (notifyBtn) { notifyBtn.disabled = false; notifyBtn.textContent = '📧 Notify Employees'; }
+    return;
+  }
+
+  var emailToUid  = {};
+  var serialToUid = {};
+  usersSnap.forEach(function(d) {
+    var u = d.data();
+    if (u.email)       emailToUid[(u.email || '').toLowerCase().trim()] = d.id;
+    if (u.talentId)    serialToUid[(u.talentId || '').toUpperCase().trim()] = d.id;
+    if (u.ibmSerialNo) serialToUid[(u.ibmSerialNo || '').toUpperCase().trim()] = d.id;
+  });
+
+  // Group tagged records by employee email
+  var byEmail = {};
+  tagged.forEach(function(r) {
+    var email = (r.email || '').toLowerCase().trim();
+    if (!email) return;
+    if (!byEmail[email]) byEmail[email] = [];
+    byEmail[email].push(r);
+  });
+
+  var emailList  = Object.keys(byEmail);
+  var sent       = 0;
+  var skipped    = 0;
+  var ts         = firebase.firestore.FieldValue.serverTimestamp();
+  var BATCH_MAX  = 490;
+  var batch      = _fbDb.batch();
+  var batchCount = 0;
+
+  for (var ei = 0; ei < emailList.length; ei++) {
+    var empEmail = emailList[ei];
+    var records  = byEmail[empEmail];
+    var firstSerial = records.length ? (records[0].ibmSerialNo || '').toUpperCase().trim() : '';
+    var uid      = emailToUid[empEmail] || (firstSerial ? serialToUid[firstSerial] : null);
+
+    // If still no UID, fallback to using their email as the user document ID
+    if (!uid) {
+      uid = empEmail;
+      // Auto-create basic user document so subcollection is accessible
+      var displayName = records.length ? _fixDotEmailName(records[0].name || '') : '';
+      _fbDb.collection('users').doc(uid).set({
+        email: empEmail,
+        name: displayName,
+        talentId: firstSerial,
+        ibmSerialNo: firstSerial,
+        role: 'user',
+        mustChangePassword: false,
+        createdAt: ts
+      }, { merge: true }).catch(function(e) {
+        console.warn('Auto-create user document error:', e);
+      });
+    }
+
+    if (!uid) { skipped++; continue; }
+    for (var ri = 0; ri < records.length; ri++) {
+      var r = records[ri];
+      var displayName = _fixDotEmailName(r.name || '');
+      var docRef = _fbDb.collection('users').doc(uid).collection('variances').doc();
+      batch.set(docRef, {
+        source:            'wfh-variance',
+        ibmSerialNo:       r.ibmSerialNo       || '',
+        name:              displayName,
+        email:             r.email             || '',
+        wfhDay1:           _capitaliseDay(r.wfhDay1 || ''),
+        wfhDay2:           _capitaliseDay(r.wfhDay2 || ''),
+        date:              r.date              || '',
+        mondayStatus:      r.mondayStatus      || '',
+        mondayDuration:    r.mondayDuration    || '',
+        weeklyOnsiteCount: r.weeklyOnsiteCount != null ? r.weeklyOnsiteCount : '',
+        variance:          r.variance || r.varType || '',
+        reason:            r.reason            || '',
+        month:             r.month             || '',
+        year:              r.year              || '',
+        notifiedAt:        ts
+      });
+      sent++;
+      batchCount++;
+      if (batchCount >= BATCH_MAX) {
+        await batch.commit();
+        batch      = _fbDb.batch();
+        batchCount = 0;
+        await new Promise(function(res) { setTimeout(res, 200); });
+      }
+    }
+  }
+
+  if (batchCount > 0) await batch.commit();
+
+  var msg = sent + ' variance' + (sent !== 1 ? 's' : '') + ' sent to ' + (emailList.length - skipped) + ' employee' + ((emailList.length - skipped) !== 1 ? 's' : '') + '.';
+  if (skipped > 0) msg += ' ' + skipped + ' employee' + (skipped !== 1 ? 's' : '') + ' skipped (no portal account).';
+  showToast(msg, sent > 0 ? '✅' : 'ℹ️');
+  if (notifyBtn) { notifyBtn.disabled = false; notifyBtn.textContent = '📧 Notify Employees'; }
 }
 
 // ──────────────────────────────────────────────
@@ -7807,6 +8298,8 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
 
 function loadIlcVariance(forceServer) {
   if (!_fbDb) return;
+  var refreshBtn = document.getElementById('ilc-refresh-btn');
+  if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = '↻ Loading…'; }
   if (forceServer) { _ilcVarianceRecords = []; }
   _populateYearDropdown('ilc-var-year', _ilcVarianceRecords);
   _renderIlcVariance();
@@ -7818,7 +8311,11 @@ function loadIlcVariance(forceServer) {
     _populateFilterDropdown('ilc-var-name',   _ilcVarianceRecords, 'name',        'Name (All)');
     _populateFilterDropdown('ilc-var-serial', _ilcVarianceRecords, 'ibmSerialNo', 'IBM Serial No. (All)');
     _renderIlcVariance();
-  }).catch(function(err) { console.error(err); });
+    if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '↻ Refresh'; }
+  }).catch(function(err) {
+    console.error(err);
+    if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '↻ Refresh'; }
+  });
 }
 
 function filterIlcVariance() { _renderIlcVariance(); }
@@ -7874,6 +8371,8 @@ async function detectIlcVariances() {
   var year  = (document.getElementById('ilc-var-year')  || {}).value || '';
   var month = (document.getElementById('ilc-var-month') || {}).value || '';
 
+  var detectBtn = document.getElementById('ilc-detect-btn');
+  if (detectBtn) { detectBtn.disabled = true; detectBtn.textContent = '⏳ Processing…'; }
   showToast('Detecting ILC variances…', '🔍');
 
   try {
@@ -8011,9 +8510,11 @@ async function detectIlcVariances() {
     if (batchCount > 0) await batch.commit();
 
     showToast('ILC variance detection complete — ' + totalWritten + ' variance(s) written.', '✅');
+    if (detectBtn) { detectBtn.disabled = false; detectBtn.textContent = '🔍 Detect Variances'; }
     loadIlcVariance(true);
   } catch(err) {
     showToast('Error detecting ILC variances: ' + (err.message || err), '❌');
+    if (detectBtn) { detectBtn.disabled = false; detectBtn.textContent = '🔍 Detect Variances'; }
     console.error('detectIlcVariances:', err);
   }
 }
@@ -8024,17 +8525,22 @@ async function clearIlcVariances() {
   var month = (document.getElementById('ilc-var-month') || {}).value || '';
   var label = (year && month) ? month + ' ' + year : 'all records';
   if (!confirm('Delete all ILC variance records for ' + label + '? This cannot be undone.')) return;
+  var clearBtn = document.getElementById('ilc-clear-btn');
+  if (clearBtn) { clearBtn.disabled = true; clearBtn.textContent = '⏳ Clearing…'; }
   showToast('Clearing ILC variances…', '🗑');
   try {
+    // Always fetch from server so we delete what actually exists, not cached data
     var q = _fbDb.collection('ilcMondayVariances');
     if (year)  q = q.where('year',  '==', year);
     if (month) q = q.where('month', '==', month);
-    var snap = await q.get();
+    var snap = await q.get({ source: 'server' });
+    var deletedIds = [];
     var BATCH_LIMIT = 490;
     var batch = _fbDb.batch();
     var count = 0;
     for (var i = 0; i < snap.docs.length; i++) {
       batch.delete(snap.docs[i].ref);
+      deletedIds.push(snap.docs[i].id);
       count++;
       if (count >= BATCH_LIMIT) {
         await batch.commit();
@@ -8043,16 +8549,34 @@ async function clearIlcVariances() {
       }
     }
     if (count > 0) await batch.commit();
+    // Update in-memory cache immediately — do NOT re-query (avoids stale cache reads)
+    if (year || month) {
+      _ilcVarianceRecords = _ilcVarianceRecords.filter(function(r) {
+        return deletedIds.indexOf(r._id) === -1;
+      });
+    } else {
+      _ilcVarianceRecords = [];
+    }
+    _populateYearDropdown('ilc-var-year', _ilcVarianceRecords);
+    _populateFilterDropdown('ilc-var-name',   _ilcVarianceRecords, 'name',        'Name (All)');
+    _populateFilterDropdown('ilc-var-serial', _ilcVarianceRecords, 'ibmSerialNo', 'IBM Serial No. (All)');
+    _renderIlcVariance();
     showToast('ILC variances cleared.', '✅');
-    loadIlcVariance(true);
+    if (clearBtn) { clearBtn.disabled = false; clearBtn.textContent = '🗑 Clear Variances'; }
   } catch(err) {
     showToast('Error clearing ILC variances.', '❌');
+    if (clearBtn) { clearBtn.disabled = false; clearBtn.textContent = '🗑 Clear Variances'; }
     console.error(err);
   }
 }
 
 function notifyIlcVariances() {
+  var notifyBtn = document.getElementById('ilc-notify-btn');
+  if (notifyBtn) { notifyBtn.disabled = true; notifyBtn.textContent = '⏳ Saving…'; }
   showToast('Variances saved — employees can view them under My Variances.', 'ℹ️');
+  setTimeout(function() {
+    if (notifyBtn) { notifyBtn.disabled = false; notifyBtn.textContent = '📧 Notify Employees'; }
+  }, 1500);
 }
 
 // ──────────────────────────────────────────────
