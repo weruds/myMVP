@@ -3784,7 +3784,7 @@
           <table class="admin-table" id="ilc-var-table">
             <thead><tr>
               <th>IBM Serial No.</th><th>Name</th><th>Email</th>
-              <th>Date (Weekending)</th><th>ILC Activity</th><th>ILC Clocking</th>
+              <th>Date</th><th>ILC Activity</th><th>ILC Clocking</th>
               <th>Monday Status</th><th>Monday Duration</th>
               <th>Variance</th><th>Variance Reason</th>
             </tr></thead>
@@ -8511,7 +8511,7 @@ function _renderIlcVariance() {
     return true;
   });
   filtered.sort(function(a, b) {
-    var dA = new Date(a.weekending || ''), dB = new Date(b.weekending || '');
+    var dA = new Date(a.date || a.weekending || ''), dB = new Date(b.date || b.weekending || '');
     var tDiff = (isNaN(dA) ? 0 : dA.getTime()) - (isNaN(dB) ? 0 : dB.getTime());
     if (tDiff !== 0) return tDiff;
     return _lastNameKey(a.name) < _lastNameKey(b.name) ? -1 : 1;
@@ -8528,7 +8528,7 @@ function _renderIlcVariance() {
       '<td>' + escapeHtml(r.ibmSerialNo    || '') + '</td>' +
       '<td>' + escapeHtml(r.name           || '') + '</td>' +
       '<td>' + escapeHtml(r.email          || '') + '</td>' +
-      '<td>' + escapeHtml(r.weekending     || '') + '</td>' +
+      '<td>' + escapeHtml(r.date || r.weekending || '') + '</td>' +
       '<td>' + escapeHtml(r.ilcActivity    || '') + '</td>' +
       '<td style="text-align:center;">' + escapeHtml(String(r.ilcClocking != null ? r.ilcClocking : '')) + '</td>' +
       '<td>' + escapeHtml(r.mondayStatus   || '') + '</td>' +
