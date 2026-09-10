@@ -8664,10 +8664,18 @@ async function detectIlcVariances() {
       }
     }
 
-    // ── Step 1: Fetch both collections in parallel ────────────────────────────
+    // ── Step 1: Fetch both collections — push year/month filter to Firestore ──
+    // Always filter by at least year when set; add month on top when set.
+    // This avoids a full-collection scan which causes long hangs on large datasets.
+    var ilcQuery    = _fbDb.collection('monthlyAttendance');
+    var mondayQuery = _fbDb.collection('mondayAttendance');
+    if (year)  { ilcQuery = ilcQuery.where('year', '==', year);    mondayQuery = mondayQuery.where('year', '==', year); }
+    if (month) { ilcQuery = ilcQuery.where('month', '==', month);  mondayQuery = mondayQuery.where('month', '==', month); }
+
+    _dbg('STEP 1 — Fetching with server-side filter', { year: year||'(all)', month: month||'(all)' });
     var results = await Promise.all([
-      _fbDb.collection('monthlyAttendance').get(),
-      _fbDb.collection('mondayAttendance').get()
+      ilcQuery.get({ source: 'server' }),
+      mondayQuery.get({ source: 'server' })
     ]);
     var ilcSnap    = results[0];
     var mondaySnap = results[1];
