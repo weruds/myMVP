@@ -7763,9 +7763,10 @@ function _populateVarianceSlDropdowns() {
     var prev = sel.value;
     var opts = '<option value="">Service Line (All)</option>';
     _serviceLineCache.forEach(function(sl) {
-      opts += '<option value="' + escapeHtml(sl.code) + '"' +
-              (sl.code === prev ? ' selected' : '') + '>' +
-              escapeHtml(sl.name || sl.code) +
+      var val = sl.name || sl.code;
+      opts += '<option value="' + escapeHtml(val) + '"' +
+              (val === prev ? ' selected' : '') + '>' +
+              escapeHtml(val) +
               '</option>';
     });
     sel.innerHTML = opts;
