@@ -8545,14 +8545,29 @@ async function detectIlcVariances() {
     var mondaySnap = results[1];
     console.log('[ILC Detect] monthlyAttendance docs:', ilcSnap.size, '| mondayAttendance docs:', mondaySnap.size);
 
-    // Build Monday lookup: "ibmSerialNo_YYYY-MM-DD" → array of ALL records for that key.
+    // Build Monday lookup: "ibmSerialNo_YYYY-MM-DD" → array of records for that key.
     // Monday.com exports can produce multiple rows per person per date (e.g. one work
     // status row + one leave row for the same half-day split). We keep ALL of them and
     // check each one against the ILC. The day is clean if ANY record passes; a variance
     // is only written when NONE of the records reconcile with the ILC clocking.
+    //
+    // IMPORTANT: filter Monday records to the same year/month being detected.
+    // The mondayAttendance collection holds records from ALL upload periods.
+    // Without this filter, records from a different month's upload that share the
+    // same ibmSerialNo+date key (e.g. a prior report whose last week overlaps the
+    // next month) would contaminate the lookup and produce ghost variances.
     var mondayMapAll = {};
     mondaySnap.forEach(function(d) {
       var r = d.data();
+      // Skip records that belong to a different year or month than what we're detecting
+      if (year) {
+        var ry = String(r.year || (r.date || '').substring(0, 4));
+        if (ry !== year) return;
+      }
+      if (month) {
+        var rm = r.month || '';
+        if (rm !== month) return;
+      }
       var key = (r.ibmSerialNo || '') + '_' + (r.date || '');
       if (!mondayMapAll[key]) mondayMapAll[key] = [];
       mondayMapAll[key].push(r);

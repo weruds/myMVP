@@ -23,3 +23,6 @@ dist/
 
 # Local variance importer credentials
 scripts/service-account.json
+
+# Firebase Admin SDK service account keys
+*firebase-adminsdk*.json
