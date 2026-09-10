@@ -8546,8 +8546,7 @@ async function detectIlcVariances() {
   showToast('Detecting ILC variances…', '🔍');
 
   try {
-    // ── Step 0: Delete existing ilcMondayVariances for this period so that
-    //    re-running detection never produces duplicate rows.
+    // ── Step 0: Clear existing variance records for this period first ────────
     {
       var delQ = _fbDb.collection('ilcMondayVariances');
       if (year)  delQ = delQ.where('year',  '==', year);
@@ -8566,82 +8565,32 @@ async function detectIlcVariances() {
           }
         }
         if (delCount > 0) await delBatch.commit();
-        console.log('[ILC Detect] cleared', delSnap.size, 'stale variance records before re-detection');
+        console.log('[ILC Detect] cleared', delSnap.size, 'stale variance records');
       }
     }
 
+    // ── Step 1: Fetch both collections in parallel ────────────────────────────
     var results = await Promise.all([
       _fbDb.collection('monthlyAttendance').get(),
       _fbDb.collection('mondayAttendance').get()
     ]);
-
     var ilcSnap    = results[0];
     var mondaySnap = results[1];
-    console.log('[ILC Detect] monthlyAttendance docs:', ilcSnap.size, '| mondayAttendance docs:', mondaySnap.size);
+    console.log('[ILC Detect] ILC docs:', ilcSnap.size, '| Monday docs:', mondaySnap.size);
 
-    // Build Monday lookup: "ibmSerialNo_YYYY-MM-DD" → array of records for that key.
-    // Monday.com exports can produce multiple rows per person per date (e.g. one work
-    // status row + one leave row for the same half-day split). We keep ALL of them and
-    // check each one against the ILC. The day is clean if ANY record passes; a variance
-    // is only written when NONE of the records reconcile with the ILC clocking.
+    // ── Step 2: Build ILC day-map ─────────────────────────────────────────────
+    // Key: "ibmSerialNo|YYYY-MM-DD"
+    // Value: { serial, name, email, weekending, date, dayOfWeek,
+    //          ilcActivity, ilcClocking, month, year }
     //
-    // IMPORTANT: filter Monday records to the same year/month being detected.
-    // The mondayAttendance collection holds records from ALL upload periods.
-    // Without this filter, records from a different month's upload that share the
-    // same ibmSerialNo+date key (e.g. a prior report whose last week overlaps the
-    // next month) would contaminate the lookup and produce ghost variances.
-    var mondayMapAll = {};
-    var _mondaySeenStatusKey = {};   // dedup by serial+date+status — mirrors _renderMondayAtt
-    mondaySnap.forEach(function(d) {
-      var r = d.data();
-      // Skip records that belong to a different year or month than what we're detecting
-      if (year) {
-        var ry = String(r.year || (r.date || '').substring(0, 4));
-        if (ry !== year) return;
-      }
-      if (month) {
-        var rm = r.month || '';
-        if (rm !== month) return;
-      }
-      // Deduplicate: same person+date+status from multiple uploads → keep only one
-      var statusDedupKey = (r.ibmSerialNo || '') + '|' + (r.date || '') + '|' + (r.status || '');
-      if (_mondaySeenStatusKey[statusDedupKey]) return;
-      _mondaySeenStatusKey[statusDedupKey] = true;
-      var key = (r.ibmSerialNo || '') + '_' + (r.date || '');
-      if (!mondayMapAll[key]) mondayMapAll[key] = [];
-      mondayMapAll[key].push(r);
-    });
-    console.log('[ILC Detect] mondayMapAll keys:', Object.keys(mondayMapAll).length);
-    var sampleMonKey = Object.keys(mondayMapAll)[0];
-    if (sampleMonKey) console.log('[ILC Detect] sample Monday map key:', sampleMonKey);
+    // One ILC record covers a full week (weekending = Friday).
+    // We expand each Mon–Fri day that has hours > 0 into its own keyed entry.
+    // Activity is taken from activityByDay[dayKey] when available (accurate per-day
+    // breakdown), otherwise falls back to the week-level activity field.
+    //
+    // Date arithmetic is always UTC-anchored so UTC+8 (and any other timezone)
+    // never shifts the computed dates by one day.
 
-    var ts = firebase.firestore.FieldValue.serverTimestamp();
-    var batch = _fbDb.batch();
-    var batchCount = 0;
-    var totalWritten = 0;
-    var BATCH_LIMIT = 200;
-
-    // Fetch ILC records and filter in-memory by year/month if selected
-    var ilcRecords = [];
-    ilcSnap.forEach(function(d) { ilcRecords.push(Object.assign({ _id: d.id }, d.data())); });
-    console.log('[ILC Detect] total ILC records before filter:', ilcRecords.length);
-    if (ilcRecords.length > 0) {
-      var sampleIlc = ilcRecords[0];
-      console.log('[ILC Detect] sample ILC record:', JSON.stringify({ ibmSerialNo: sampleIlc.ibmSerialNo, weekending: sampleIlc.weekending, activity: sampleIlc.activity, monday: sampleIlc.monday, year: sampleIlc.year, month: sampleIlc.month }));
-    }
-    if (year || month) {
-      ilcRecords = ilcRecords.filter(function(r) {
-        var ry = String(r.year || (r.weekending || '').substring(0,4));
-        var rm = r.month || '';
-        if (year  && ry !== year)  return false;
-        if (month && rm !== month) return false;
-        return true;
-      });
-      console.log('[ILC Detect] ILC records after year/month filter:', ilcRecords.length);
-    }
-
-    // ILC records are weekly (one row per employee per weekending).
-    // We need to check each weekday (Mon–Fri) against the matching Monday.com record.
     var ILC_WEEKDAYS = [
       { key: 'monday',    offset: -4 },
       { key: 'tuesday',   offset: -3 },
@@ -8650,142 +8599,232 @@ async function detectIlcVariances() {
       { key: 'friday',    offset:  0 }
     ];
 
-    for (var i = 0; i < ilcRecords.length; i++) {
-      var r = ilcRecords[i];
-      var we = r.weekending || '';
-      if (!we) continue;
+    // ilcDayMap: "serial|YYYY-MM-DD" → { ...day info }
+    var ilcDayMap = {};
 
-      // Parse the weekending (Friday) date — always anchor to UTC midnight so
-      // timezone offsets (e.g. UTC+8) don't shift the computed day dates by one.
-      // "Aug 7, 2026T00:00:00Z" is invalid; fall back to local-parse then re-anchor.
+    ilcSnap.forEach(function(d) {
+      var r = d.data();
+
+      // Apply year/month filter if selected
+      if (year) {
+        var ry = String(r.year || (r.weekending || '').substring(0, 4));
+        if (ry !== year) return;
+      }
+      if (month) {
+        var rm = r.month || '';
+        if (rm !== month) return;
+      }
+
+      var serial = (r.ibmSerialNo || '').trim();
+      var we     = (r.weekending  || '').trim();
+      if (!serial || !we) return;
+
+      // Parse weekending (Friday) → UTC midnight, timezone-safe
       var fridayD = new Date(we + 'T00:00:00Z');
       if (isNaN(fridayD.getTime())) {
-        var _tmp = new Date(we);
-        if (isNaN(_tmp.getTime())) continue;
-        fridayD = new Date(_tmp.toISOString().substring(0, 10) + 'T00:00:00Z');
+        var _t = new Date(we);
+        if (isNaN(_t.getTime())) return;
+        fridayD = new Date(_t.toISOString().substring(0, 10) + 'T00:00:00Z');
       }
-      if (isNaN(fridayD.getTime())) continue;
+      if (isNaN(fridayD.getTime())) return;
 
-      var serial = r.ibmSerialNo || '';
+      ILC_WEEKDAYS.forEach(function(dayInfo) {
+        var dayKey = dayInfo.key;
+        var dayHrs = parseFloat(r[dayKey] || 0) || 0;
+        if (dayHrs === 0) return;  // no clocking this day — skip
 
-      for (var d = 0; d < ILC_WEEKDAYS.length; d++) {
-        var dayInfo  = ILC_WEEKDAYS[d];
-        var dayKey   = dayInfo.key;
-        var dayHrs   = parseFloat(r[dayKey] || 0) || 0;
-        if (dayHrs === 0) continue;  // no clocking this day — skip
-
-        // Compute the actual calendar date for this weekday
+        // Compute this day's calendar date (UTC)
         var dayDate = new Date(fridayD);
         dayDate.setUTCDate(fridayD.getUTCDate() + dayInfo.offset);
-        var dayDateStr = dayDate.toISOString().substring(0, 10);
-        var lookupKey = serial + '_' + dayDateStr;
-        var mondayRecs = mondayMapAll[lookupKey] || [];
-        console.log('[ILC Detect] checking', dayKey, '| serial:', serial, '| date:', dayDateStr, '| hrs:', dayHrs, '| Monday records:', mondayRecs.length);
+        var dateStr = dayDate.toISOString().substring(0, 10);
 
-        // Build a pseudo-ILC record for just this day so _applyIlcVarianceRule can work
-        var dayIlcRec = Object.assign({}, r);
-        // Override the per-day hours so the rule engine sees this day's value as "monday"
-        dayIlcRec.monday = dayHrs;
-        // Use activityByDay for this specific day if available — and derive
-        // the day-specific activity string so the rule engine doesn't pick up
-        // leave codes that belong to OTHER days of the same week.
-        if (r.activityByDay && r.activityByDay[dayKey] && r.activityByDay[dayKey].length) {
-          dayIlcRec.activityByDay = { monday: r.activityByDay[dayKey] };
-          dayIlcRec.activity = r.activityByDay[dayKey]
+        // Resolve the day-specific activity from activityByDay when available.
+        // activityByDay[dayKey] is an array of { code, hrs } objects.
+        var ilcActivity;
+        var abd = r.activityByDay && r.activityByDay[dayKey];
+        if (Array.isArray(abd) && abd.length) {
+          ilcActivity = abd
             .map(function(e) { return (typeof e === 'object' ? e.code : e || '').trim().toUpperCase(); })
             .filter(Boolean)
             .join(', ');
         } else {
-          dayIlcRec.activityByDay = {};
-          var weekCodes = (r.activity || '').toUpperCase().split(',').map(function(a) { return a.trim(); }).filter(Boolean);
-          if (weekCodes.length > 1) {
-            dayIlcRec.activity = weekCodes.indexOf('GB') !== -1 ? 'GB' : weekCodes[0];
-          }
+          // Fall back to week-level activity.
+          // If the week has multiple codes (e.g. "GB, SL") we still assign the full
+          // string — _applyIlcVarianceRule will parse the comma list.
+          ilcActivity = (r.activity || '').trim().toUpperCase();
         }
 
-        // No Monday record at all → variance
-        if (mondayRecs.length === 0) {
-          var noRecResult = { variance: 'Yes', reason: 'No Monday.com record found for ' + dayDateStr };
-          var docRef = _fbDb.collection('ilcMondayVariances').doc();
-          batch.set(docRef, {
-            ibmSerialNo:    serial,
-            name:           r.name  || '',
-            email:          r.email || '',
-            weekending:     we,
-            date:           dayDateStr,
-            dayOfWeek:      dayKey,
-            ilcActivity:    dayIlcRec.activity || r.activity || '',
-            ilcClocking:    dayHrs,
-            mondayStatus:   '',
-            mondayDuration: '',
-            variance:       noRecResult.variance,
-            varianceReason: noRecResult.reason,
-            month:          r.month || month,
-            year:           r.year  || year,
-            detectedAt:     ts
-          });
-          batchCount++;
-          totalWritten++;
-          if (batchCount >= BATCH_LIMIT) {
-            await batch.commit();
-            batch = _fbDb.batch();
-            batchCount = 0;
-            await new Promise(function(res) { setTimeout(res, 300); });
-          }
-          continue;
+        var mapKey = serial + '|' + dateStr;
+        // If there are somehow two ILC rows for the same person+date (shouldn't happen
+        // after pivot, but guard anyway), combine their hours and activities.
+        if (ilcDayMap[mapKey]) {
+          var existing = ilcDayMap[mapKey];
+          existing.ilcClocking += dayHrs;
+          // Merge activity codes — keep unique codes only
+          var existCodes = existing.ilcActivity.split(',').map(function(a) { return a.trim(); }).filter(Boolean);
+          var newCodes   = ilcActivity.split(',').map(function(a) { return a.trim(); }).filter(Boolean);
+          newCodes.forEach(function(c) { if (existCodes.indexOf(c) === -1) existCodes.push(c); });
+          existing.ilcActivity = existCodes.join(', ');
+        } else {
+          ilcDayMap[mapKey] = {
+            serial:      serial,
+            name:        r.name  || '',
+            email:       r.email || '',
+            weekending:  we,
+            date:        dateStr,
+            dayOfWeek:   dayKey,
+            ilcActivity: ilcActivity,
+            ilcClocking: dayHrs,
+            month:       r.month || month,
+            year:        r.year  || year
+          };
         }
+      });
+    });
 
-        // Check ALL Monday records for this person+date.
-        // If ANY record passes (no variance), the day is clean — skip it entirely.
-        // Only write a variance when every single Monday record fails the check.
-        var failedResults = [];
-        var anyPass = false;
+    console.log('[ILC Detect] ILC day entries:', Object.keys(ilcDayMap).length);
+
+    // ── Step 3: Build Monday day-map ──────────────────────────────────────────
+    // Key: "ibmSerialNo|YYYY-MM-DD"
+    // Value: array of unique { status, duration } records for that person+date.
+    //
+    // Deduplication: same serial+date+status → keep only one entry.
+    // This mirrors the dedup already applied in _renderMondayAtt so the
+    // comparison sees exactly what is displayed on the Monday Attendance page.
+
+    var mondayDayMap = {};  // "serial|YYYY-MM-DD" → [{ status, duration }]
+    var _monDedup    = {};  // guards serial|date|status duplicates
+
+    mondaySnap.forEach(function(d) {
+      var r = d.data();
+
+      // Apply year/month filter to match the ILC side
+      if (year) {
+        var ry = String(r.year || (r.date || '').substring(0, 4));
+        if (ry !== year) return;
+      }
+      if (month) {
+        var rm = r.month || '';
+        if (rm !== month) return;
+      }
+
+      var serial  = (r.ibmSerialNo || '').trim();
+      var dateStr = (r.date        || '').trim();
+      if (!serial || !dateStr) return;
+
+      // Skip duplicate serial+date+status entries from re-uploads
+      var dedupKey = serial + '|' + dateStr + '|' + (r.status || '');
+      if (_monDedup[dedupKey]) return;
+      _monDedup[dedupKey] = true;
+
+      var mapKey = serial + '|' + dateStr;
+      if (!mondayDayMap[mapKey]) mondayDayMap[mapKey] = [];
+      mondayDayMap[mapKey].push({ status: r.status || '', duration: r.duration || '' });
+    });
+
+    console.log('[ILC Detect] Monday day entries:', Object.keys(mondayDayMap).length);
+
+    // ── Step 4: Compare — one result row per ILC day entry ───────────────────
+    // For each ILC day:
+    //   • No Monday records at all → variance "No Monday.com record"
+    //   • At least one Monday record passes _applyIlcVarianceRule → No variance
+    //   • All Monday records fail → variance, show the Monday statuses found
+    //     as a single combined string (e.g. "Sick / Rest Day") — ONE row only.
+
+    var ts         = firebase.firestore.FieldValue.serverTimestamp();
+    var batch      = _fbDb.batch();
+    var batchCount = 0;
+    var totalWritten = 0;
+    var BATCH_LIMIT  = 200;
+
+    var ilcKeys = Object.keys(ilcDayMap);
+    for (var i = 0; i < ilcKeys.length; i++) {
+      var entry       = ilcDayMap[ilcKeys[i]];
+      var mondayRecs  = mondayDayMap[ilcKeys[i]] || [];
+
+      // Build a minimal ILC record shaped the way _applyIlcVarianceRule expects
+      var dayIlcRec = {
+        activity:     entry.ilcActivity,
+        monday:       entry.ilcClocking,
+        activityByDay: {}   // activityByDay already resolved into activity string above
+      };
+
+      var varianceFlag   = 'No';
+      var varianceReason = '';
+      var mondayStatusDisplay   = '';
+      var mondayDurationDisplay = '';
+
+      if (mondayRecs.length === 0) {
+        // ILC has a clocking but Monday has no record at all for this person+date
+        varianceFlag   = 'Yes';
+        varianceReason = 'No Monday.com record found for ' + entry.date;
+
+      } else {
+        // Check all Monday records; day is clean if ANY passes
+        var failedRecs = [];
+        var anyPass    = false;
         for (var mi = 0; mi < mondayRecs.length; mi++) {
           var chk = _applyIlcVarianceRule(dayIlcRec, mondayRecs[mi]);
           if (chk.variance !== 'Yes') { anyPass = true; break; }
-          failedResults.push({ rec: mondayRecs[mi], reason: chk.reason });
+          failedRecs.push({ rec: mondayRecs[mi], reason: chk.reason });
         }
-        if (anyPass) continue;  // at least one Monday record reconciles — no variance
 
-        // Every Monday record for this date produced a variance.
-        // Write one row per unique status+duration combination — avoids duplicates
-        // when the same status appears in more than one Firestore document.
-        var _seenVarianceCombo = {};
-        for (var fi = 0; fi < failedResults.length; fi++) {
-          var failRec    = failedResults[fi].rec;
-          var failReason = failedResults[fi].reason;
-          var _comboKey  = (failRec.status || '') + '||' + (failRec.duration || '');
-          if (_seenVarianceCombo[_comboKey]) continue;
-          _seenVarianceCombo[_comboKey] = true;
-          var docRef = _fbDb.collection('ilcMondayVariances').doc();
-          batch.set(docRef, {
-            ibmSerialNo:    serial,
-            name:           r.name  || '',
-            email:          r.email || '',
-            weekending:     we,
-            date:           dayDateStr,
-            dayOfWeek:      dayKey,
-            ilcActivity:    dayIlcRec.activity || r.activity || '',
-            ilcClocking:    dayHrs,
-            mondayStatus:   failRec.status   || '',
-            mondayDuration: failRec.duration || '',
-            variance:       'Yes',
-            varianceReason: failReason,
-            month:          r.month || month,
-            year:           r.year  || year,
-            detectedAt:     ts
+        if (!anyPass) {
+          varianceFlag = 'Yes';
+          // Summarise all unique statuses found on Monday for this day into one string
+          var uniqueStatuses  = [];
+          var uniqueDurations = [];
+          var uniqueReasons   = [];
+          failedRecs.forEach(function(f) {
+            if (f.rec.status   && uniqueStatuses.indexOf(f.rec.status)     === -1) uniqueStatuses.push(f.rec.status);
+            if (f.rec.duration && uniqueDurations.indexOf(f.rec.duration)  === -1) uniqueDurations.push(f.rec.duration);
+            if (f.reason       && uniqueReasons.indexOf(f.reason)          === -1) uniqueReasons.push(f.reason);
           });
-          batchCount++;
-          totalWritten++;
-          if (batchCount >= BATCH_LIMIT) {
-            await batch.commit();
-            batch = _fbDb.batch();
-            batchCount = 0;
-            await new Promise(function(res) { setTimeout(res, 300); });
-          }
-        }  // end fi loop
-      }  // end weekday loop
-    }  // end ilcRecords loop
+          mondayStatusDisplay   = uniqueStatuses.join(' / ');
+          mondayDurationDisplay = uniqueDurations.join(' / ');
+          varianceReason        = uniqueReasons.join('; ');
+        } else {
+          // At least one record reconciles — record it as No Variance
+          // Still capture what Monday showed so the row is informative
+          var passingRec = mondayRecs.find(function(mr) {
+            return _applyIlcVarianceRule(dayIlcRec, mr).variance !== 'Yes';
+          }) || mondayRecs[0];
+          mondayStatusDisplay   = passingRec.status   || '';
+          mondayDurationDisplay = passingRec.duration || '';
+        }
+      }
+
+      // Only write variance rows (skip clean days to keep the collection lean)
+      if (varianceFlag !== 'Yes') continue;
+
+      var docRef = _fbDb.collection('ilcMondayVariances').doc();
+      batch.set(docRef, {
+        ibmSerialNo:    entry.serial,
+        name:           entry.name,
+        email:          entry.email,
+        weekending:     entry.weekending,
+        date:           entry.date,
+        dayOfWeek:      entry.dayOfWeek,
+        ilcActivity:    entry.ilcActivity,
+        ilcClocking:    entry.ilcClocking,
+        mondayStatus:   mondayStatusDisplay,
+        mondayDuration: mondayDurationDisplay,
+        variance:       varianceFlag,
+        varianceReason: varianceReason,
+        month:          entry.month,
+        year:           entry.year,
+        detectedAt:     ts
+      });
+      batchCount++;
+      totalWritten++;
+      if (batchCount >= BATCH_LIMIT) {
+        await batch.commit();
+        batch = _fbDb.batch();
+        batchCount = 0;
+        await new Promise(function(res) { setTimeout(res, 300); });
+      }
+    }
+
     if (batchCount > 0) await batch.commit();
 
     showToast('ILC variance detection complete — ' + totalWritten + ' variance(s) written.', '✅');
