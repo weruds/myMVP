@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
-     Developed and created by: Wilson Serquina -->
+     Developed and created by: Wilson Serquina
+     Build: v1.3.0 | 2025-07-14 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3349,7 +3350,11 @@
     <!-- Firebase Status -->
     <div class="fb-status-bar">
       <div class="fb-dot" id="fb-dot"></div>
-      <span id="fb-status-text">Connectingâ€¦</span>
+      <span id="fb-status-text">Connecting…</span>
+    </div>
+    <!-- Build version -->
+    <div style="padding:4px 14px 8px;text-align:center;">
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.0</span>
     </div>
   </aside>
 
@@ -8650,9 +8655,15 @@ async function detectIlcVariances() {
       var we = r.weekending || '';
       if (!we) continue;
 
-      // Parse the weekending (Friday) date
+      // Parse the weekending (Friday) date — always anchor to UTC midnight so
+      // timezone offsets (e.g. UTC+8) don't shift the computed day dates by one.
+      // "Aug 7, 2026T00:00:00Z" is invalid; fall back to local-parse then re-anchor.
       var fridayD = new Date(we + 'T00:00:00Z');
-      if (isNaN(fridayD.getTime())) { fridayD = new Date(we); }
+      if (isNaN(fridayD.getTime())) {
+        var _tmp = new Date(we);
+        if (isNaN(_tmp.getTime())) continue;
+        fridayD = new Date(_tmp.toISOString().substring(0, 10) + 'T00:00:00Z');
+      }
       if (isNaN(fridayD.getTime())) continue;
 
       var serial = r.ibmSerialNo || '';
