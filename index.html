@@ -3954,6 +3954,19 @@
   </div>
 </div>
 
+<!-- Clear Variance confirm modal (shared by WFH + ILC) -->
+<div class="admin-modal-overlay" id="clear-variance-overlay" onclick="if(event.target===this)_closeClearVarianceModal()">
+  <div class="admin-modal" onclick="event.stopPropagation()">
+    <div class="admin-modal-icon">🗑️</div>
+    <div class="admin-modal-title" id="clear-variance-title">Clear Variances?</div>
+    <div class="admin-modal-sub" id="clear-variance-msg"></div>
+    <div class="admin-modal-actions">
+      <button class="btn btn-ghost" onclick="_closeClearVarianceModal()">Cancel</button>
+      <button class="btn btn-danger" id="clear-variance-confirm-btn" onclick="_confirmClearVariance()">Yes, Clear</button>
+    </div>
+  </div>
+</div>
+
 <!-- Edit Masterlist Employee modal -->
 <div class="admin-modal-overlay" id="edit-masterlist-overlay" onclick="if(event.target===this)closeEditMasterlistModal()">
   <div class="admin-modal" onclick="event.stopPropagation()" style="width:400px;">
@@ -8276,13 +8289,40 @@ async function detectWfhVariances() {
   }
 }
 
+var _clearVariancePending = null;
+
+function _openClearVarianceModal(type, label, onConfirm) {
+  var title = type === 'WFH' ? 'Clear WFH Variances?' : 'Clear ILC Variances?';
+  var scope = label !== 'all records' ? 'the <strong>' + label + '</strong> period' : '<strong>all periods</strong>';
+  document.getElementById('clear-variance-title').innerHTML = title;
+  document.getElementById('clear-variance-msg').innerHTML =
+    'This will permanently delete all ' + type + ' variance records for ' + scope + '.<br><br>This action <strong>cannot be undone</strong>.';
+  _clearVariancePending = onConfirm;
+  document.getElementById('clear-variance-overlay').classList.add('open');
+}
+
+function _closeClearVarianceModal() {
+  document.getElementById('clear-variance-overlay').classList.remove('open');
+  _clearVariancePending = null;
+}
+
+function _confirmClearVariance() {
+  _closeClearVarianceModal();
+  if (_clearVariancePending) _clearVariancePending();
+}
+
 async function clearWfhVariances() {
   if (!_fbDb) return;
   if (!_authProfile || _authProfile.role !== 'admin') { showToast('Admin access required.', '🔒'); return; }
   var year  = (document.getElementById('wfh-var-year')  || {}).value || '';
   var month = (document.getElementById('wfh-var-month') || {}).value || '';
   var label = (year && month) ? month + ' ' + year : 'all records';
-  if (!confirm('Delete all WFH variance records for ' + label + '? This cannot be undone.')) return;
+  _openClearVarianceModal('WFH', label, _doClearWfhVariances);
+}
+
+async function _doClearWfhVariances() {
+  var year  = (document.getElementById('wfh-var-year')  || {}).value || '';
+  var month = (document.getElementById('wfh-var-month') || {}).value || '';
   var clearBtn = document.getElementById('wfh-clear-btn');
   if (clearBtn) { clearBtn.disabled = true; clearBtn.textContent = '⏳ Clearing…'; }
   showToast('Clearing variances…', '🗑');
@@ -9279,7 +9319,12 @@ async function clearIlcVariances() {
   var year  = (document.getElementById('ilc-var-year')  || {}).value || '';
   var month = (document.getElementById('ilc-var-month') || {}).value || '';
   var label = (year && month) ? month + ' ' + year : 'all records';
-  if (!confirm('Delete all ILC variance records for ' + label + '? This cannot be undone.')) return;
+  _openClearVarianceModal('ILC', label, _doClearIlcVariances);
+}
+
+async function _doClearIlcVariances() {
+  var year  = (document.getElementById('ilc-var-year')  || {}).value || '';
+  var month = (document.getElementById('ilc-var-month') || {}).value || '';
   var clearBtn = document.getElementById('ilc-clear-btn');
   if (clearBtn) { clearBtn.disabled = true; clearBtn.textContent = '⏳ Clearing…'; }
   showToast('Clearing ILC variances…', '🗑');
