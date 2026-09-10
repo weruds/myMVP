@@ -320,11 +320,15 @@
     min-height: 0;          /* critical for flex children */
   }
 
-  /* â”€â”€â”€ SECTION HEADER â”€â”€â”€ */
+  /* â"€â"€â"€ SECTION HEADER â"€â"€â"€ */
   .section-header {
     display: flex; align-items: flex-start; justify-content: space-between;
     margin-bottom: 24px; gap: 12px;
     flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 11;
+    background: var(--bg);
+    padding-top: 4px;
+    margin-top: -4px;
   }
   .section-title {
     font-size: 24px; font-weight: 800;
@@ -3438,7 +3442,7 @@
           <button class="btn btn-ghost btn-sm" onclick="loadMyVariances()">Refresh</button>
         </div>
       </div>
-      <div id="my-variances-body"></div>
+      <div id="my-variances-body" class="page-scroll-body"></div>
     </div>
 
     <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• AUDIT REVIEWS PAGE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
@@ -3451,7 +3455,7 @@
         </div>
         <button class="btn btn-ghost btn-sm" onclick="loadAuditReviews()">Refresh</button>
       </div>
-      <div id="audit-reviews-body"></div>
+      <div id="audit-reviews-body" class="page-scroll-body"></div>
     </div>
 
     <!-- ══════════════════ ONBOARD NEW EMPLOYEE PAGE ══════════════════ -->
@@ -3464,7 +3468,7 @@
         </div>
         <button class="btn btn-primary" onclick="openOnboardModal()">＋ Onboard Employee</button>
       </div>
-      <div id="onboard-employee-body">
+      <div id="onboard-employee-body" class="page-scroll-body">
         <div class="admin-table-wrap">
           <table class="admin-table">
             <thead><tr><th>IBM Serial No.</th><th>Name</th><th>Email</th><th>Service Line</th><th>Status</th></tr></thead>
@@ -3486,7 +3490,7 @@
         </div>
         <button class="btn btn-primary" onclick="openAddServiceLineModal()">＋ Add Service Line</button>
       </div>
-      <div id="service-lines-body">
+      <div id="service-lines-body" class="page-scroll-body">
         <div class="admin-table-wrap">
           <table class="admin-table" id="service-lines-table">
             <thead><tr><th>Code</th><th>Name</th><th>Description</th><th></th></tr></thead>
@@ -3514,7 +3518,7 @@
       <div class="page-toolbar">
         <input type="text" id="masterlist-search" placeholder="Search name or serial…" oninput="filterMasterlist()" />
       </div>
-      <div id="masterlist-body">
+      <div id="masterlist-body" class="page-scroll-body">
         <div class="admin-table-wrap">
           <table class="admin-table" id="masterlist-table">
             <thead><tr><th>IBM Serial No.</th><th>Name</th><th>Email</th><th>Service Line</th><th>Status</th><th></th></tr></thead>
@@ -3582,7 +3586,7 @@
           <button class="btn btn-danger btn-sm" onclick="openDeleteAttReportModal('ilc')">🗑 Delete Report</button>
         </div>
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;position:sticky;top:0;z-index:10;background:var(--bg);padding-top:4px;padding-bottom:10px;">
+      <div class="page-toolbar" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
         <!-- Filters (left) -->
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <select id="monthly-att-year" onchange="filterMonthlyAtt()" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:7px 12px;outline:none;"><option value="">Year</option></select>
@@ -3652,7 +3656,7 @@
         </div>
         <button class="btn btn-primary btn-sm" onclick="openAddRoleModal()">＋ Add User</button>
       </div>
-      <div id="role-maintenance-body">
+      <div id="role-maintenance-body" class="page-scroll-body">
         <div class="admin-table-wrap">
           <table class="admin-table" id="role-maintenance-table">
             <thead><tr>
