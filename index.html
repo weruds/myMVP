@@ -6546,10 +6546,8 @@ async function runMasterSync() {
   btn.querySelector('span').textContent = '⏳ Syncing…';
 
   try {
-    // ── 1. Read masterlist — cache first, fall back to server ─────────────────
-    var mlSnap = await _fbDb.collection('masterlist').get({ source: 'cache' }).catch(function() {
-      return _fbDb.collection('masterlist').get();
-    });
+    // ── 1. Read masterlist from server (never cache — must reflect cleared/updated state)
+    var mlSnap = await _fbDb.collection('masterlist').get({ source: 'server' });
     var mlDocs = [];
     mlSnap.forEach(function(d) { mlDocs.push({ id: d.id, data: d.data() }); });
 
@@ -6626,6 +6624,17 @@ async function runMasterSync() {
       else if (sl && priority < e._priority) e.serviceLine = sl;
       // Track best priority seen
       if (priority < e._priority) e._priority = priority;
+    }
+
+    // ── 2b. Also fetch attendance data fresh from server if in-memory arrays are empty ──
+    // This ensures Master Sync works even if the user hasn't navigated to those pages yet.
+    if (!_monthlyAttRecords.length) {
+      var ilcSnap = await _fbDb.collection('monthlyAttendance').get({ source: 'server' });
+      ilcSnap.forEach(function(d) { _monthlyAttRecords.push(Object.assign({ _id: d.id }, d.data())); });
+    }
+    if (!_mondayAttRecords.length) {
+      var monSnap = await _fbDb.collection('mondayAttendance').get({ source: 'server' });
+      monSnap.forEach(function(d) { _mondayAttRecords.push(Object.assign({ _id: d.id }, d.data())); });
     }
 
     // Feed all three sources — ILC is most authoritative (1), then Monday (2), then Masterlist (3)
@@ -6754,7 +6763,7 @@ async function runMasterSync() {
     await _syncUsersFromMasterlist(Object.values(empMap));
 
     showToast('Master Sync complete — ' + parts.join(', ') + '.', '✅');
-    loadMasterlist();
+    loadMasterlist(true);
 
   } catch (err) {
     console.error('Master Sync error:', err);
