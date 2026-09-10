@@ -8584,6 +8584,15 @@ async function detectIlcVariances() {
   if (detectBtn) { detectBtn.disabled = true; detectBtn.textContent = '⏳ Processing…'; }
   showToast('Detecting ILC variances…', '🔍');
 
+  // Safety net: if the whole function hangs for more than 90s, force-reset the button
+  // and download whatever the logger captured so far so the run isn't a black hole.
+  var _safetyTimer = setTimeout(function() {
+    _dbg('TIMEOUT — detection exceeded 90 seconds. Partial log follows.');
+    _dbgDownload(true);
+    if (detectBtn) { detectBtn.disabled = false; detectBtn.textContent = '🔍 Detect Variances'; }
+    showToast('Detection timed out after 90s. Check the downloaded debug log.', '⚠️');
+  }, 90000);
+
   // ── Debug logger ─────────────────────────────────────────────────────────
   // Accumulates every trace line into a plain-text string.
   // At the end a .txt file is automatically downloaded to your machine.
@@ -8960,14 +8969,16 @@ async function detectIlcVariances() {
     _dbgDownload(false);
 
     showToast('ILC variance detection complete — ' + totalWritten + ' variance(s) written.', '✅');
-    if (detectBtn) { detectBtn.disabled = false; detectBtn.textContent = '🔍 Detect Variances'; }
     loadIlcVariance(true);
   } catch(err) {
     _dbg('ERROR: ' + (err.message || String(err)));
     _dbgDownload(true);
     showToast('Error detecting ILC variances: ' + (err.message || err), '❌');
-    if (detectBtn) { detectBtn.disabled = false; detectBtn.textContent = '🔍 Detect Variances'; }
     console.error('detectIlcVariances:', err);
+  } finally {
+    // Clear the safety timer and always re-enable the button
+    clearTimeout(_safetyTimer);
+    if (detectBtn) { detectBtn.disabled = false; detectBtn.textContent = '🔍 Detect Variances'; }
   }
 }
 
