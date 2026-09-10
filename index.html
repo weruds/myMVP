@@ -6420,6 +6420,15 @@ function _renderMondayAtt() {
                       !(r.ibmSerialNo || '').toLowerCase().includes(search))    return false;
     return true;
   });
+  // Deduplicate: if the same person+date+status appears more than once (e.g. from a
+  // double-upload before the upsert fix), show only the first occurrence.
+  var _seenMon = {};
+  filtered = filtered.filter(function(r) {
+    var k = (r.ibmSerialNo || '') + '|' + (r.date || '') + '|' + (r.status || '');
+    if (_seenMon[k]) return false;
+    _seenMon[k] = true;
+    return true;
+  });
   // Sort: date asc chronologically first, then last name A–Z
   filtered.sort(function(a, b) {
     var tA = new Date(a.date || ''), tB = new Date(b.date || '');
@@ -6875,6 +6884,8 @@ function handleMondayAttUpload(event) {
       sub:        file.name,
       collection: 'mondayAttendance',
       idField:    null,
+      // Composite upsert key: same employee + date + status → overwrite instead of append
+      upsertKeys: ['ibmSerialNo', 'date', 'status'],
       addMonthYear:     true,
       checkFullMonth:   true,
       requireFinalConfirm: true,
@@ -7295,6 +7306,18 @@ async function confirmUpload() {
         var row = Object.assign({}, rows[i], { updatedAt: ts });
         var key = String(row[schema.idField] || '').trim();
         var ref = key && existing[key] ? col.doc(existing[key]) : col.doc();
+        cur.set(ref, row, { merge: true });
+        if (++count >= BATCH) { batches.push(cur); cur = _fbDb.batch(); count = 0; }
+      }
+    } else if (schema.upsertKeys && schema.upsertKeys.length) {
+      // Attendance with composite upsert key: use a deterministic doc ID so
+      // uploading the same row twice overwrites rather than appending a duplicate.
+      for (var i = 0; i < rows.length; i++) {
+        var row = Object.assign({}, rows[i], { uploadedAt: ts });
+        var upsertId = schema.upsertKeys.map(function(k) {
+          return String(row[k] || '').trim().replace(/[^a-zA-Z0-9@._\-]/g, '_');
+        }).join('__');
+        var ref = upsertId ? col.doc(upsertId) : col.doc();
         cur.set(ref, row, { merge: true });
         if (++count >= BATCH) { batches.push(cur); cur = _fbDb.batch(); count = 0; }
       }
