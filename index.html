@@ -8201,12 +8201,13 @@ async function detectWfhVariances() {
       }
 
       // Rule 3: daily WFH compliance
+      var dayLabel = dayOfWeek.charAt(0).toUpperCase() + dayOfWeek.slice(1);
       if (varType === 'No Variance' && status === 'Remote (Scheduled)' && !isWfhDay) {
         varType = 'Daily Variance';
-        reason  = 'Remote (Scheduled) on a non-WFH day (' + dayOfWeek + ')';
+        reason  = 'Remote (Scheduled) on a non-WFH day (' + dayLabel + ')';
       } else if (varType === 'No Variance' && (status === 'Remote (Unscheduled)' || status === 'Unscheduled')) {
         varType = 'Daily Variance';
-        reason  = 'Unscheduled remote on ' + (isWfhDay ? 'WFH day' : 'non-WFH day') + ' (' + dayOfWeek + ')';
+        reason  = 'Unscheduled remote on ' + (isWfhDay ? 'WFH day' : 'non-WFH day') + ' (' + dayLabel + ')';
       }
 
       // Rule 4: weekly onsite count — always evaluated independently of Rule 3.
