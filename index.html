@@ -6339,6 +6339,9 @@ function handleMonthlyAttUpload(event) {
       sub:        file.name,
       collection: 'monthlyAttendance',
       idField:    null,
+      // Upsert by ibmSerialNo + weekending so re-uploading the same file
+      // overwrites the existing record instead of appending a duplicate.
+      upsertKeys: ['ibmSerialNo', 'weekending'],
       addMonthYear:     true,
       checkFullMonth:   true,
       requireFinalConfirm: true,
@@ -8600,7 +8603,11 @@ async function detectIlcVariances() {
     ];
 
     // ilcDayMap: "serial|YYYY-MM-DD" → { ...day info }
-    var ilcDayMap = {};
+    var ilcDayMap  = {};
+    // Guard against duplicate ILC docs (same serial+weekending) caused by
+    // multiple uploads before the upsertKeys fix was in place.
+    // Only the first occurrence of each serial+weekending is used.
+    var _ilcWeDedup = {};
 
     ilcSnap.forEach(function(d) {
       var r = d.data();
@@ -8614,6 +8621,11 @@ async function detectIlcVariances() {
         var rm = r.month || '';
         if (rm !== month) return;
       }
+
+      // Skip duplicate ILC records for the same person+weekending
+      var ilcWeKey = (r.ibmSerialNo || '').trim() + '|' + (r.weekending || '').trim();
+      if (_ilcWeDedup[ilcWeKey]) return;
+      _ilcWeDedup[ilcWeKey] = true;
 
       var serial = (r.ibmSerialNo || '').trim();
       var we     = (r.weekending  || '').trim();
