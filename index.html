@@ -7674,6 +7674,8 @@ function filterWfhVariance() { _renderWfhVariance(); }
 function _wfhVarianceLabel(r) {
   var stored = (r.variance || r.varType || '').trim();
   var status = (r.mondayStatus || '').trim();
+  // Strip half-day suffix e.g. "Remote (Unscheduled) + Full Day" → "Remote (Unscheduled)"
+  var base   = _statusBaseType(status);
 
   // If stored variance is explicitly 'No Status', honour it
   if (stored === 'No Status') return 'No Status';
@@ -7683,8 +7685,8 @@ function _wfhVarianceLabel(r) {
   // before the No Status detection rule was added).
   if (!status) return 'No Status';
 
-  if (status === 'Remote (Unscheduled)' || status === 'Unscheduled') return 'Unscheduled';
-  if (status === 'Remote (Scheduled)') {
+  if (base === 'Remote (Unscheduled)' || base === 'Unscheduled') return 'Unscheduled';
+  if (base === 'Remote (Scheduled)') {
     var dow = _getDayOfWeek(r.date || '');
     var d1  = (r.wfhDay1 || '').toLowerCase();
     var d2  = (r.wfhDay2 || '').toLowerCase();
@@ -7706,10 +7708,14 @@ function _renderWfhVariance() {
   var search   = ((document.getElementById('wfh-var-search')  || {}).value || '').toLowerCase().trim();
 
   var filtered = _wfhVarianceRecords.filter(function(r) {
-    // Skip No Variance records — only actual variances should appear in the list
-    if ((r.variance || r.varType || '') === 'No Variance') return false;
-    // Fix 2: skip records where ibmSerialNo, name, AND email are all blank
+    // Skip records where ibmSerialNo, name, AND email are all blank (summary/garbage rows)
     if (!(r.ibmSerialNo || '').trim() && !(r.name || '').trim() && !(r.email || '').trim()) return false;
+    // Skip records with a non-ISO date (e.g. "2026-08-01 to 2026-08-31" range strings)
+    if ((r.date || '').indexOf(' ') !== -1) return false;
+    // Skip No Variance records — only actual variances should appear in the list
+    // Check both the stored field AND the computed label so stale/mismatched records are excluded
+    if ((r.variance || r.varType || '') === 'No Variance') return false;
+    if (_wfhVarianceLabel(r) === 'No Variance') return false;
     if (year     && String(r.year  || (r.date || '').substring(0,4)) !== year)  return false;
     if (month    && (r.month || '') !== month)                                   return false;
     if (name     && (r.name  || '') !== name)                                    return false;
