@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.3.0 | 2025-07-14 -->
+     Build: v1.3.1 | 2026-09-10 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3354,7 +3354,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.0</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.1</span>
     </div>
   </aside>
 
@@ -3767,14 +3767,8 @@
         </div>
       </div>
       <div class="page-toolbar">
-        <select id="ilc-var-year"   onchange="filterIlcVariance()"><option value="">Year</option></select>
-        <select id="ilc-var-month"  onchange="filterIlcVariance()">
-          <option value="">Month</option>
-          <option>January</option><option>February</option><option>March</option>
-          <option>April</option><option>May</option><option>June</option>
-          <option>July</option><option>August</option><option>September</option>
-          <option>October</option><option>November</option><option>December</option>
-        </select>
+        <select id="ilc-var-year"   onchange="_onIlcVarYearChange()"><option value="">Year</option></select>
+        <select id="ilc-var-month"  onchange="filterIlcVariance()"><option value="">Month</option></select>
         <select id="ilc-var-name"   onchange="filterIlcVariance()"><option value="">Name (All)</option></select>
         <select id="ilc-var-serial" onchange="filterIlcVariance()"><option value="">IBM Serial No. (All)</option></select>
         <input type="text" id="ilc-var-search" placeholder="Search name or serial…" oninput="filterIlcVariance()" />
@@ -6109,6 +6103,8 @@ function loadMonthlyAttendance(forceServer) {
     _populateFilterDropdown('monthly-att-serial',    _monthlyAttRecords, 'ibmSerialNo', 'IBM Serial No. (All)');
     _populateIlcActivityFilter(_monthlyAttRecords);
     _renderMonthlyAtt();
+    // Keep the Monday-vs-ILC variance filters in sync
+    _populateIlcVarYearMonth();
   }).catch(function(err) { console.error(err); });
 }
 
@@ -6404,6 +6400,8 @@ function loadMondayAttendance(forceServer) {
       sel.innerHTML = opts;
     }
     _renderMondayAtt();
+    // Keep the Monday-vs-ILC variance filters in sync
+    _populateIlcVarYearMonth();
   }).catch(function(err) { console.error(err); });
 }
 
@@ -8358,9 +8356,15 @@ function _toISODate(raw) {
     d = new Date(Date.UTC(parseInt(dash[3]), parseInt(dash[2]) - 1, parseInt(dash[1])));
     if (!isNaN(d.getTime())) return d.toISOString().substring(0, 10);
   }
-  // Fallback — let the browser parse it, anchor to UTC
+  // Fallback — let the browser parse it, then re-anchor to UTC midnight so
+  // local-time parsing (e.g. "Aug 7, 2026" in UTC+8 → Aug 6 UTC) does not
+  // shift the date by one day.
   d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString().substring(0, 10);
+  if (!isNaN(d.getTime())) {
+    // Re-anchor: use the local year/month/day, not the UTC-shifted equivalent.
+    return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+             .toISOString().substring(0, 10);
+  }
   return '';
 }
 
@@ -8505,18 +8509,87 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
   return { variance: 'No', reason: '' };
 }
 
+// ── Populate the Year and Month filter dropdowns on the Monday-vs-ILC variance
+// page from the union of what exists in the ILC (monthlyAttendance) and Monday
+// (mondayAttendance) collections.  Month options are always scoped to the
+// currently-selected year so the user only sees months that actually have data.
+var _MONTH_NAMES = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December'
+];
+var _MONTH_ORDER = {};
+_MONTH_NAMES.forEach(function(m, i) { _MONTH_ORDER[m] = i; });
+
+function _buildIlcVarYearMonthIndex() {
+  // Collect { year, month } pairs from both attendance collections.
+  var index = {};   // year → Set of month names
+  function _add(r) {
+    var y = String(r.year || (r.weekending || r.date || '').substring(0, 4) || '');
+    var m = r.month || '';
+    if (!y || !/^\d{4}$/.test(y)) return;
+    if (!index[y]) index[y] = new Set();
+    if (m && _MONTH_ORDER.hasOwnProperty(m)) index[y].add(m);
+  }
+  _monthlyAttRecords.forEach(_add);
+  _mondayAttRecords.forEach(_add);
+  return index;
+}
+
+function _populateIlcVarYearMonth() {
+  var yearSel  = document.getElementById('ilc-var-year');
+  var monthSel = document.getElementById('ilc-var-month');
+  if (!yearSel || !monthSel) return;
+
+  var prevYear  = yearSel.value;
+  var prevMonth = monthSel.value;
+
+  var index = _buildIlcVarYearMonthIndex();
+  var years = Object.keys(index).filter(function(y) { return /^\d{4}$/.test(y); });
+  years.sort().reverse();   // most-recent first
+
+  // --- Year dropdown ---
+  var yOpts = '<option value="">Year</option>';
+  years.forEach(function(y) { yOpts += '<option' + (y === prevYear ? ' selected' : '') + '>' + y + '</option>'; });
+  yearSel.innerHTML = yOpts;
+
+  // --- Month dropdown (scoped to selected year, or union of all years) ---
+  var availMonths;
+  var activeYear = yearSel.value;   // re-read after rebuild
+  if (activeYear && index[activeYear]) {
+    availMonths = Array.from(index[activeYear]);
+  } else {
+    // No year selected — union of all months across all years
+    var allMonths = new Set();
+    years.forEach(function(y) { index[y].forEach(function(m) { allMonths.add(m); }); });
+    availMonths = Array.from(allMonths);
+  }
+  availMonths.sort(function(a, b) { return _MONTH_ORDER[a] - _MONTH_ORDER[b]; });
+
+  var mOpts = '<option value="">Month</option>';
+  availMonths.forEach(function(m) {
+    mOpts += '<option' + (m === prevMonth ? ' selected' : '') + '>' + m + '</option>';
+  });
+  monthSel.innerHTML = mOpts;
+}
+
+// Called when the Year dropdown changes: re-scope months then re-render.
+function _onIlcVarYearChange() {
+  _populateIlcVarYearMonth();
+  filterIlcVariance();
+}
+
 function loadIlcVariance(forceServer) {
   if (!_fbDb) return;
   var refreshBtn = document.getElementById('ilc-refresh-btn');
   if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = '↻ Loading…'; }
   if (forceServer) { _ilcVarianceRecords = []; }
-  _populateYearDropdown('ilc-var-year', _ilcVarianceRecords);
+  _populateIlcVarYearMonth();
   _renderIlcVariance();
   var opts = forceServer ? { source: 'server' } : {};
   _fbDb.collection('ilcMondayVariances').orderBy('weekending', 'desc').get(opts).then(function(snap) {
     _ilcVarianceRecords = [];
     snap.forEach(function(d) { _ilcVarianceRecords.push(Object.assign({ _id: d.id }, d.data())); });
-    _populateYearDropdown('ilc-var-year',   _ilcVarianceRecords);
+    _populateIlcVarYearMonth();
     _populateFilterDropdown('ilc-var-name',   _ilcVarianceRecords, 'name',        'Name (All)');
     _populateFilterDropdown('ilc-var-serial', _ilcVarianceRecords, 'ibmSerialNo', 'IBM Serial No. (All)');
     _renderIlcVariance();
@@ -8584,14 +8657,14 @@ async function detectIlcVariances() {
   if (detectBtn) { detectBtn.disabled = true; detectBtn.textContent = '⏳ Processing…'; }
   showToast('Detecting ILC variances…', '🔍');
 
-  // Safety net: if the whole function hangs for more than 90s, force-reset the button
+  // Safety net: if the whole function hangs for more than 5 minutes, force-reset the button
   // and download whatever the logger captured so far so the run isn't a black hole.
   var _safetyTimer = setTimeout(function() {
-    _dbg('TIMEOUT — detection exceeded 90 seconds. Partial log follows.');
+    _dbg('TIMEOUT — detection exceeded 300 seconds. Partial log follows.');
     _dbgDownload(true);
     if (detectBtn) { detectBtn.disabled = false; detectBtn.textContent = '🔍 Detect Variances'; }
-    showToast('Detection timed out after 90s. Check the downloaded debug log.', '⚠️');
-  }, 90000);
+    showToast('Detection timed out after 5 min. Check the downloaded debug log.', '⚠️');
+  }, 300000);
 
   // ── Debug logger ─────────────────────────────────────────────────────────
   // Accumulates every trace line into a plain-text string.
@@ -8970,6 +9043,11 @@ async function detectIlcVariances() {
         batchCount = 0;
         await new Promise(function(res) { setTimeout(res, 300); });
       }
+    }
+    // Yield to the browser every 100 keys to stay responsive and avoid
+    // triggering the safety timeout during large unfiltered runs.
+    if (i > 0 && i % 100 === 0) {
+      await new Promise(function(res) { setTimeout(res, 0); });
     }
 
     if (batchCount > 0) await batch.commit();
