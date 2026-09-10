@@ -8412,6 +8412,12 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
     if (mBase === ilcLeaveType && mFullDay) {
       return { variance: 'Yes', reason: 'ILC has GB+' + ilcLeaveType + ' (half day) but Monday is ' + mStatus + ' Full Day' };
     }
+    // ILC = 4 or 4.5h GB + any other activity, Monday = presence → No Variance.
+    // A 4/4.5h GB clocking paired with any other activity is treated as a sufficient
+    // work record; a presence status on Monday is acceptable without flagging leave.
+    if (isPresence && (gbHrs === 4 || gbHrs === 4.5)) {
+      return { variance: 'No', reason: '' };
+    }
     // Monday shows a presence status → doesn't account for the leave hours in ILC
     if (isPresence) {
       return { variance: 'Yes', reason: 'ILC has GB(' + gbHrs + 'h)+' + ilcLeaveType + '(' + leaveHrs + 'h) but Monday is: ' + mStatus };
