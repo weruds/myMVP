@@ -6642,6 +6642,13 @@ async function runMasterSync() {
     _mondayAttRecords.forEach(function(r)  { _mergeInto(r, 2); });
     mlDocs.forEach(function(m)             { _mergeInto(m.data, 3); });
 
+    // ── 2c. Fetch variance collections — used only to patch name/email/serial ──
+    var wfhVarSnap  = await _fbDb.collection('wfhVariances').get({ source: 'server' });
+    var ilcVarSnap  = await _fbDb.collection('ilcMondayVariances').get({ source: 'server' });
+    var _wfhVarDocs = [], _ilcVarDocs = [];
+    wfhVarSnap.forEach(function(d)  { _wfhVarDocs.push({ id: d.id, data: d.data() }); });
+    ilcVarSnap.forEach(function(d)  { _ilcVarDocs.push({ id: d.id, data: d.data() }); });
+
     // ── 3. Build fast-lookup from unified map (by serial AND by name) ─────────
     var bySerial   = {};   // serial → truth
     var byNormName = {};   // normalised name → truth
@@ -6675,8 +6682,10 @@ async function runMasterSync() {
     }
 
     var ilcPatched = 0, monPatched = 0, mlPatched = 0, newMlCount = 0;
+    var wfhVarPatched = 0, ilcVarPatched = 0;
     var attWrites = [];
     var mlWrites  = [];
+    var varWrites = [];  // variance collection patches (name/email/serial only)
     var ts = firebase.firestore.FieldValue.serverTimestamp();
 
     // ── 5a. Patch in-memory ILC records instantly ─────────────────────────────
@@ -6697,7 +6706,41 @@ async function runMasterSync() {
       monPatched++;
     });
 
-    // ── 5c. Patch masterlist docs ─────────────────────────────────────────────
+    // ── 5c. Patch wfhVariances — name, email, ibmSerialNo only ───────────────
+    _wfhVarDocs.forEach(function(m) {
+      var r     = m.data;
+      var sn    = (r.ibmSerialNo || '').trim();
+      var nn    = _normaliseName(r.name || '');
+      var email = (r.email || '').trim().toLowerCase();
+      var truth = (sn && bySerial[sn]) || (nn && byNormName[nn]) || null;
+      if (!truth) return;
+      var patch = {};
+      if (truth.serial && sn    !== truth.serial) patch.ibmSerialNo = truth.serial;
+      if (truth.name   && truth.name !== nn)      patch.name        = truth.name;
+      if (truth.email  && email !== truth.email)  patch.email       = truth.email;
+      if (!Object.keys(patch).length) return;
+      varWrites.push({ col: 'wfhVariances', id: m.id, patch: patch });
+      wfhVarPatched++;
+    });
+
+    // ── 5d. Patch ilcMondayVariances — name, email, ibmSerialNo only ─────────
+    _ilcVarDocs.forEach(function(m) {
+      var r     = m.data;
+      var sn    = (r.ibmSerialNo || '').trim();
+      var nn    = _normaliseName(r.name || '');
+      var email = (r.email || '').trim().toLowerCase();
+      var truth = (sn && bySerial[sn]) || (nn && byNormName[nn]) || null;
+      if (!truth) return;
+      var patch = {};
+      if (truth.serial && sn    !== truth.serial) patch.ibmSerialNo = truth.serial;
+      if (truth.name   && truth.name !== nn)      patch.name        = truth.name;
+      if (truth.email  && email !== truth.email)  patch.email       = truth.email;
+      if (!Object.keys(patch).length) return;
+      varWrites.push({ col: 'ilcMondayVariances', id: m.id, patch: patch });
+      ilcVarPatched++;
+    });
+
+    // ── 5e. Patch masterlist docs ─────────────────────────────────────────────
     mlDocs.forEach(function(m) {
       var patch = _diffRow(m.data, false);
       if (patch) { mlWrites.push({ id: m.id, patch: patch }); mlPatched++; }
@@ -6715,7 +6758,7 @@ async function runMasterSync() {
       newMlCount++;
     });
 
-    var totalChanges = ilcPatched + monPatched + mlPatched + newMlCount;
+    var totalChanges = ilcPatched + monPatched + mlPatched + newMlCount + wfhVarPatched + ilcVarPatched;
     if (!totalChanges) {
       showToast('Everything is already in sync — no changes needed.', '✅');
       btn.disabled = false;
@@ -6739,10 +6782,11 @@ async function runMasterSync() {
       await Promise.all(batches.map(function(b) { return b.commit(); }));
     }
 
-    // ── 8. Fire-and-forget attendance writes in background ────────────────────
-    if (attWrites.length) {
+    // ── 8. Fire-and-forget attendance + variance writes in background ─────────
+    var bgWrites = attWrites.concat(varWrites);
+    if (bgWrites.length) {
       var BATCH2 = 490, cur2 = _fbDb.batch(), cnt2 = 0, batches2 = [];
-      attWrites.forEach(function(w) {
+      bgWrites.forEach(function(w) {
         var ref = _fbDb.collection(w.col).doc(w.id);
         cur2.update(ref, Object.assign({}, w.patch, { syncedAt: ts }));
         if (++cnt2 >= BATCH2) { batches2.push(cur2); cur2 = _fbDb.batch(); cnt2 = 0; }
@@ -6755,10 +6799,12 @@ async function runMasterSync() {
 
     // ── 9. Summary toast + refresh masterlist ─────────────────────────────────
     var parts = [];
-    if (ilcPatched > 0) parts.push(ilcPatched + ' ILC record'        + (ilcPatched  !== 1 ? 's' : '') + ' patched');
-    if (monPatched > 0) parts.push(monPatched + ' Monday record'     + (monPatched  !== 1 ? 's' : '') + ' patched');
-    if (mlPatched  > 0) parts.push(mlPatched  + ' masterlist record' + (mlPatched   !== 1 ? 's' : '') + ' patched');
-    if (newMlCount > 0) parts.push(newMlCount + ' new masterlist entr' + (newMlCount !== 1 ? 'ies' : 'y') + ' added');
+    if (ilcPatched     > 0) parts.push(ilcPatched     + ' ILC record'              + (ilcPatched     !== 1 ? 's' : '') + ' patched');
+    if (monPatched     > 0) parts.push(monPatched     + ' Monday record'           + (monPatched     !== 1 ? 's' : '') + ' patched');
+    if (mlPatched      > 0) parts.push(mlPatched      + ' masterlist record'       + (mlPatched      !== 1 ? 's' : '') + ' patched');
+    if (newMlCount     > 0) parts.push(newMlCount     + ' new masterlist entr'     + (newMlCount     !== 1 ? 'ies' : 'y') + ' added');
+    if (wfhVarPatched  > 0) parts.push(wfhVarPatched  + ' WFH variance record'     + (wfhVarPatched  !== 1 ? 's' : '') + ' patched');
+    if (ilcVarPatched  > 0) parts.push(ilcVarPatched  + ' ILC variance record'     + (ilcVarPatched  !== 1 ? 's' : '') + ' patched');
     // Auto-create / sync user documents in users collection
     await _syncUsersFromMasterlist(Object.values(empMap));
 
