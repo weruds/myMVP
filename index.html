@@ -4459,14 +4459,14 @@ function navigate(page) {
   if (page === 'audit-reviews')      loadAuditReviews();
   if (page === 'onboard-employee')   loadOnboardRecords();
   if (page === 'service-lines')      loadServiceLines();
-  if (page === 'masterlist')         loadMasterlist();
-  if (page === 'wfh-schedule')       loadWfhSchedule();
-  if (page === 'monthly-attendance') loadMonthlyAttendance();
-  if (page === 'monday-attendance')  loadMondayAttendance();
+  if (page === 'masterlist')         loadMasterlist(true);
+  if (page === 'wfh-schedule')       loadWfhSchedule(true);
+  if (page === 'monthly-attendance') loadMonthlyAttendance(true);
+  if (page === 'monday-attendance')  loadMondayAttendance(true);
   if (page === 'role-maintenance')   loadRoleMaintenance();
-  if (page === 'discrepancy-list')   loadDiscrepancyList();
-  if (page === 'wfh-variance')       loadWfhVariance();
-  if (page === 'ilc-variance')       loadIlcVariance();
+  if (page === 'discrepancy-list')   loadDiscrepancyList(true);
+  if (page === 'wfh-variance')       loadWfhVariance(true);
+  if (page === 'ilc-variance')       loadIlcVariance(true);
   closeSidebar();
 }
 
@@ -5321,12 +5321,13 @@ async function deleteServiceLine(docId, btn) {
 // ──────────────────────────────────────────────
 var _masterlistRecords = [];
 
-function loadMasterlist() {
+function loadMasterlist(forceServer) {
   if (!_fbDb) return;
   var tbody = document.getElementById('masterlist-tbody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>';
-  _fbDb.collection('masterlist').orderBy('name').get().then(function(snap) {
+  var opts = forceServer ? { source: 'server' } : {};
+  _fbDb.collection('masterlist').orderBy('name').get(opts).then(function(snap) {
     _masterlistRecords = [];
     snap.forEach(function(d) { _masterlistRecords.push(Object.assign({ _id: d.id }, d.data())); });
     _renderMasterlist();
@@ -5925,12 +5926,13 @@ function _renderWfhSchedule() {
   }).join('');
 }
 
-function loadWfhSchedule() {
+function loadWfhSchedule(forceServer) {
   if (!_fbDb) return;
   var tbody = document.getElementById('wfh-tbody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px;">Loading…</td></tr>';
-  _fbDb.collection('wfhSchedule').orderBy('name').get().then(function(snap) {
+  var opts = forceServer ? { source: 'server' } : {};
+  _fbDb.collection('wfhSchedule').orderBy('name').get(opts).then(function(snap) {
     _wfhScheduleRecords = [];
     snap.forEach(function(d) { _wfhScheduleRecords.push(Object.assign({ _id: d.id }, d.data())); });
     _renderWfhSchedule();
