@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.3.2 | 2026-09-10 -->
+     Build: v1.3.3 | 2026-09-10 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -292,7 +292,33 @@
 
   /* â”€â”€â”€ PAGE CONTENT â”€â”€â”€ */
   .page { display: none; flex: 1; padding: 28px; }
-  .page.active { display: block; }
+  .page.active {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── Sticky toolbar + floating thead for large-record pages ── */
+  /* The toolbar bar sits sticky at the top of the scroll area    */
+  .page-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg);
+    padding-top: 4px;
+    padding-bottom: 12px;
+    margin-bottom: 6px;
+  }
+
+  /* Table wrappers on large-record pages expand to fill remaining
+     height so only the tbody scrolls, not the whole page.         */
+  .page-scroll-body {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: auto;
+    min-height: 0;          /* critical for flex children */
+  }
 
   /* â”€â”€â”€ SECTION HEADER â”€â”€â”€ */
   .section-header {
@@ -984,6 +1010,12 @@
 
     /* Page padding */
     .page { padding: 14px; }
+    /* On small screens let the page itself overflow normally */
+    .page.active { height: auto; overflow: visible; }
+    .page-scroll-body { overflow: visible; border: none; }
+    .page-scroll-body .admin-table-wrap,
+    .page-scroll-body .ilc-table-wrap { border: 1px solid var(--border); }
+    .page-toolbar { position: static; }
 
     /* Forms */
     .form-row { grid-template-columns: 1fr; }
@@ -3063,6 +3095,18 @@
 
   /* ─── ADMIN DATA TABLE ─── */
   .admin-table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+  /* Inside a page-scroll-body the wrap must not create a second scroll
+     layer — the parent already scrolls. overflow:visible lets the sticky
+     thead work correctly relative to the single scrolling ancestor.     */
+  .page-scroll-body .admin-table-wrap,
+  .page-scroll-body .ilc-table-wrap {
+    overflow: visible;
+    border: none;     /* border moved to the scroll-body itself */
+  }
+  .page-scroll-body {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
   .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .admin-table thead th {
     font-size: 10px; font-weight: 700; color: var(--muted2);
@@ -3071,6 +3115,7 @@
     background: var(--surface2);
     border-bottom: 1px solid var(--border);
     white-space: nowrap;
+    position: sticky; top: 0; z-index: 2;
   }
   .admin-table tbody tr td {
     padding: 10px 14px;
@@ -3175,10 +3220,9 @@
   .upload-zone-text { font-size: 13px; font-weight: 600; color: var(--muted); }
   .upload-zone-hint { font-size: 11px; color: var(--muted2); }
 
-  /* ─── PAGE TOOLBAR ─── */
+  /* ─── PAGE TOOLBAR — layout properties (sticky/position handled above) ─── */
   .page-toolbar {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    margin-bottom: 18px;
   }
   .page-toolbar select, .page-toolbar input {
     background: var(--surface); border: 1px solid var(--border);
@@ -3354,7 +3398,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.2</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.3</span>
     </div>
   </aside>
 
@@ -3525,7 +3569,7 @@
           <button class="btn btn-danger btn-sm" onclick="openDeleteAttReportModal('ilc')">🗑 Delete Report</button>
         </div>
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:18px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;position:sticky;top:0;z-index:10;background:var(--bg);padding-top:4px;padding-bottom:10px;">
         <!-- Filters (left) -->
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <select id="monthly-att-year" onchange="filterMonthlyAtt()" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--white);font-family:var(--font);font-size:13px;padding:7px 12px;outline:none;"><option value="">Year</option></select>
@@ -3558,7 +3602,7 @@
           <span style="display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:20px;font-size:10px;font-weight:600;border:1px solid rgba(245,158,11,0.3);background:rgba(245,158,11,0.10);color:#b45309;" title="Half-day: two activities share one day (e.g. 4.5h GB + 4h VL)"><span style="font-size:11px;font-weight:800;">½</span> Half-day</span>
         </div>
       </div>
-      <div id="monthly-att-body">
+      <div id="monthly-att-body" class="page-scroll-body">
         <div class="ilc-table-wrap">
           <table class="ilc-table" id="monthly-att-table">
             <colgroup>
@@ -3639,7 +3683,7 @@
         <select id="monday-att-group" onchange="filterMondayAtt()"><option value="">Group (All)</option></select>
         <input type="text" id="monday-att-search" placeholder="Search name or serial…" oninput="filterMondayAtt()" />
       </div>
-      <div id="monday-att-body">
+      <div id="monday-att-body" class="page-scroll-body">
         <div class="admin-table-wrap">
           <table class="admin-table" id="monday-att-table">
             <thead><tr>
@@ -3677,7 +3721,7 @@
         <select id="discrepancy-serial" onchange="filterDiscrepancyList()"><option value="">IBM Serial No. (All)</option></select>
         <input type="text" id="discrepancy-search" placeholder="Search name or serial…" oninput="filterDiscrepancyList()" />
       </div>
-      <div id="discrepancy-body">
+      <div id="discrepancy-body" class="page-scroll-body">
         <div class="admin-table-wrap">
           <table class="admin-table" id="discrepancy-table">
             <thead><tr>
@@ -3727,7 +3771,7 @@
         </select>
         <input type="text" id="wfh-var-search" placeholder="Search name or serial…" oninput="filterWfhVariance()" />
       </div>
-      <div id="wfh-var-body">
+      <div id="wfh-var-body" class="page-scroll-body">
         <div class="admin-table-wrap">
           <table class="admin-table" id="wfh-var-table">
             <thead><tr>
@@ -3773,7 +3817,7 @@
         <select id="ilc-var-serial" onchange="filterIlcVariance()"><option value="">IBM Serial No. (All)</option></select>
         <input type="text" id="ilc-var-search" placeholder="Search name or serial…" oninput="filterIlcVariance()" />
       </div>
-      <div id="ilc-var-body">
+      <div id="ilc-var-body" class="page-scroll-body">
         <div class="admin-table-wrap">
           <table class="admin-table" id="ilc-var-table">
             <thead><tr>
