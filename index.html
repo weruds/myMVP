@@ -7696,6 +7696,7 @@ function _wfhVarianceLabel(r) {
   // before the No Status detection rule was added).
   if (!status) return 'No Status';
 
+  if (base === 'No Status') return 'No Status';
   if (base === 'Remote (Unscheduled)' || base === 'Unscheduled') return 'Unscheduled';
   if (base === 'Remote (Scheduled)') {
     var dow = _getDayOfWeek(r.date || '');
