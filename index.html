@@ -5262,7 +5262,7 @@ function populateOnboardServiceLineDropdown() {
     var opts = '<option value="">— Select service line —</option>';
     snap.forEach(function(d) {
       var sl = d.data();
-      opts += '<option value="' + escapeHtml(sl.code) + '">' + escapeHtml(sl.code) + ' – ' + escapeHtml(sl.name) + '</option>';
+      opts += '<option value="' + escapeHtml(sl.code) + '">' + escapeHtml(sl.name || sl.code) + '</option>';
     });
     sel.innerHTML = opts;
   }).catch(function() {});
@@ -6470,7 +6470,7 @@ function loadMondayAttendance(forceServer) {
       var opts = '<option value="">Group (All)</option>';
       slSnap.forEach(function(d) {
         var sl = d.data();
-        if (sl.code) opts += '<option value="' + escapeHtml(sl.code) + '">' + escapeHtml(sl.code) + (sl.name ? ' – ' + escapeHtml(sl.name) : '') + '</option>';
+        if (sl.code) opts += '<option value="' + escapeHtml(sl.code) + '">' + escapeHtml(sl.name || sl.code) + '</option>';
       });
       sel.innerHTML = opts;
     }
@@ -7765,7 +7765,7 @@ function _populateVarianceSlDropdowns() {
     _serviceLineCache.forEach(function(sl) {
       opts += '<option value="' + escapeHtml(sl.code) + '"' +
               (sl.code === prev ? ' selected' : '') + '>' +
-              escapeHtml(sl.code) + (sl.name ? ' \u2013 ' + escapeHtml(sl.name) : '') +
+              escapeHtml(sl.name || sl.code) +
               '</option>';
     });
     sel.innerHTML = opts;
