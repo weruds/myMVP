@@ -8743,20 +8743,21 @@ async function detectIlcVariances() {
         return;
       }
 
-      // Parse weekending (Friday) → UTC midnight, timezone-safe
-      var fridayD = new Date(we + 'T00:00:00Z');
-      if (isNaN(fridayD.getTime())) {
-        var _t = new Date(we);
-        if (isNaN(_t.getTime())) {
-          _dbg('  STEP2 SKIP (bad date) docId=' + d.id + ' serial=' + serial + ' weekending=' + we);
-          return;
-        }
-        fridayD = new Date(_t.toISOString().substring(0, 10) + 'T00:00:00Z');
-      }
-      if (isNaN(fridayD.getTime())) {
-        _dbg('  STEP2 SKIP (bad date after retry) docId=' + d.id + ' serial=' + serial + ' weekending=' + we);
+      // Parse weekending (Friday) → UTC midnight using _toISODate so any text
+      // format ("Aug 7, 2026", "8/7/2026", ISO) is normalised to UTC before
+      // the day offsets are applied. Never use new Date(str) directly — it
+      // treats ambiguous strings as local time and shifts the date in UTC+8.
+      var weISO = _toISODate(we);
+      if (!weISO) {
+        _dbg('  STEP2 SKIP (bad weekending date) docId=' + d.id + ' serial=' + serial + ' weekending=' + we);
         return;
       }
+      var fridayD = new Date(weISO + 'T00:00:00Z');
+      if (isNaN(fridayD.getTime())) {
+        _dbg('  STEP2 SKIP (bad weekending date after ISO parse) docId=' + d.id + ' serial=' + serial + ' weekending=' + we);
+        return;
+      }
+      _dbg('  STEP2 weekending parsed: raw=' + we + ' → iso=' + weISO);
 
       ILC_WEEKDAYS.forEach(function(dayInfo) {
         var dayKey = dayInfo.key;
@@ -8860,15 +8861,6 @@ async function detectIlcVariances() {
       var dateStr = _toISODate(rawDate);
       if (!serial || !dateStr) {
         _dbg('  STEP3 SKIP (missing serial or unparseable date) serial=' + (serial||'(empty)') + ' rawDate=' + rawDate + ' parsedISO=' + dateStr);
-        return;
-      }
-
-      // Skip weekend dates — ILC only clocks Mon–Fri; a Saturday/Sunday row in
-      // Monday attendance (e.g. a "Rest Day" on a weekend) must never be matched
-      // against an ILC weekday entry.
-      var _dow = new Date(dateStr + 'T00:00:00Z').getUTCDay(); // 0=Sun, 6=Sat
-      if (_dow === 0 || _dow === 6) {
-        _dbg('  STEP3 SKIP (weekend date) serial=' + serial + ' dateISO=' + dateStr + ' dow=' + _dow + ' status=' + (r.status||''));
         return;
       }
 
