@@ -8584,6 +8584,22 @@ async function detectIlcVariances() {
   if (detectBtn) { detectBtn.disabled = true; detectBtn.textContent = '⏳ Processing…'; }
   showToast('Detecting ILC variances…', '🔍');
 
+  // ── Debug logger ─────────────────────────────────────────────────────────
+  // Accumulates a full trace of every step. Dumped to console at the end.
+  // Open DevTools → Console, expand the collapsible groups to inspect each step.
+  var _dbg = {
+    session:    new Date().toISOString(),
+    filter:     { year: year || '(all)', month: month || '(all)' },
+    step0:      {},          // cleared docs
+    step1:      {},          // raw fetch counts
+    step2:      { skipped: [], expanded: [] },   // ILC day-map build
+    step3:      { raw: [], displaced: [], final: [] },  // Monday map build
+    step4:      { noMonday: [], noVariance: [], variance: [] }, // comparison
+    written:    0
+  };
+  function _dbgLog() { /* console.groupCollapsed / console.table used at end */ }
+  // ─────────────────────────────────────────────────────────────────────────
+
   try {
     // ── Step 0: Clear existing variance records for this period first ────────
     {
@@ -8591,6 +8607,7 @@ async function detectIlcVariances() {
       if (year)  delQ = delQ.where('year',  '==', year);
       if (month) delQ = delQ.where('month', '==', month);
       var delSnap = await delQ.get({ source: 'server' });
+      _dbg.step0 = { deletedCount: delSnap.size };
       if (delSnap.size > 0) {
         var delBatch = _fbDb.batch();
         var delCount = 0;
@@ -8615,6 +8632,7 @@ async function detectIlcVariances() {
     ]);
     var ilcSnap    = results[0];
     var mondaySnap = results[1];
+    _dbg.step1 = { ilcDocs: ilcSnap.size, mondayDocs: mondaySnap.size };
     console.log('[ILC Detect] ILC docs:', ilcSnap.size, '| Monday docs:', mondaySnap.size);
 
     // ── Step 2: Build ILC day-map ─────────────────────────────────────────────
@@ -8651,30 +8669,48 @@ async function detectIlcVariances() {
       // Apply year/month filter if selected
       if (year) {
         var ry = String(r.year || (r.weekending || '').substring(0, 4));
-        if (ry !== year) return;
+        if (ry !== year) {
+          _dbg.step2.skipped.push({ docId: d.id, serial: r.ibmSerialNo, weekending: r.weekending, reason: 'year filter: doc=' + ry + ' filter=' + year });
+          return;
+        }
       }
       if (month) {
         var rm = r.month || '';
-        if (rm !== month) return;
+        if (rm !== month) {
+          _dbg.step2.skipped.push({ docId: d.id, serial: r.ibmSerialNo, weekending: r.weekending, reason: 'month filter: doc=' + rm + ' filter=' + month });
+          return;
+        }
       }
 
       // Skip duplicate ILC records for the same person+weekending
       var ilcWeKey = (r.ibmSerialNo || '').trim() + '|' + (r.weekending || '').trim();
-      if (_ilcWeDedup[ilcWeKey]) return;
+      if (_ilcWeDedup[ilcWeKey]) {
+        _dbg.step2.skipped.push({ docId: d.id, serial: r.ibmSerialNo, weekending: r.weekending, reason: 'duplicate serial+weekending' });
+        return;
+      }
       _ilcWeDedup[ilcWeKey] = true;
 
       var serial = (r.ibmSerialNo || '').trim();
       var we     = (r.weekending  || '').trim();
-      if (!serial || !we) return;
+      if (!serial || !we) {
+        _dbg.step2.skipped.push({ docId: d.id, serial: serial || '(empty)', weekending: we || '(empty)', reason: 'missing serial or weekending' });
+        return;
+      }
 
       // Parse weekending (Friday) → UTC midnight, timezone-safe
       var fridayD = new Date(we + 'T00:00:00Z');
       if (isNaN(fridayD.getTime())) {
         var _t = new Date(we);
-        if (isNaN(_t.getTime())) return;
+        if (isNaN(_t.getTime())) {
+          _dbg.step2.skipped.push({ docId: d.id, serial: serial, weekending: we, reason: 'unparseable weekending date' });
+          return;
+        }
         fridayD = new Date(_t.toISOString().substring(0, 10) + 'T00:00:00Z');
       }
-      if (isNaN(fridayD.getTime())) return;
+      if (isNaN(fridayD.getTime())) {
+        _dbg.step2.skipped.push({ docId: d.id, serial: serial, weekending: we, reason: 'unparseable weekending date (after retry)' });
+        return;
+      }
 
       ILC_WEEKDAYS.forEach(function(dayInfo) {
         var dayKey = dayInfo.key;
@@ -8696,23 +8732,20 @@ async function detectIlcVariances() {
             .filter(Boolean)
             .join(', ');
         } else {
-          // Fall back to week-level activity.
-          // If the week has multiple codes (e.g. "GB, SL") we still assign the full
-          // string — _applyIlcVarianceRule will parse the comma list.
           ilcActivity = (r.activity || '').trim().toUpperCase();
         }
 
         var mapKey = serial + '|' + dateStr;
-        // If there are somehow two ILC rows for the same person+date (shouldn't happen
-        // after pivot, but guard anyway), combine their hours and activities.
         if (ilcDayMap[mapKey]) {
+          // Merge duplicate same-person+date ILC entries
           var existing = ilcDayMap[mapKey];
+          var prevClocking = existing.ilcClocking;
           existing.ilcClocking += dayHrs;
-          // Merge activity codes — keep unique codes only
           var existCodes = existing.ilcActivity.split(',').map(function(a) { return a.trim(); }).filter(Boolean);
           var newCodes   = ilcActivity.split(',').map(function(a) { return a.trim(); }).filter(Boolean);
           newCodes.forEach(function(c) { if (existCodes.indexOf(c) === -1) existCodes.push(c); });
           existing.ilcActivity = existCodes.join(', ');
+          _dbg.step2.expanded.push({ key: mapKey, action: 'MERGED', day: dayKey, hrs: dayHrs, prevClocking: prevClocking, newClocking: existing.ilcClocking, activity: existing.ilcActivity });
         } else {
           ilcDayMap[mapKey] = {
             serial:      serial,
@@ -8726,6 +8759,7 @@ async function detectIlcVariances() {
             month:       r.month || month,
             year:        r.year  || year
           };
+          _dbg.step2.expanded.push({ key: mapKey, action: 'added', serial: serial, name: r.name, day: dayKey, date: dateStr, weekending: we, activity: ilcActivity, hrs: dayHrs });
         }
       });
     });
@@ -8757,6 +8791,9 @@ async function detectIlcVariances() {
     mondaySnap.forEach(function(d) {
       var r = d.data();
 
+      // Track every raw Monday doc seen (before any filtering)
+      _dbg.step3.raw.push({ docId: d.id, serial: r.ibmSerialNo, dateRaw: r.date, status: r.status, duration: r.duration, month: r.month, year: r.year });
+
       // Apply year/month filter to match the ILC side
       if (year) {
         var ry = String(r.year || (r.date || '').substring(0, 4));
@@ -8769,7 +8806,8 @@ async function detectIlcVariances() {
 
       var serial  = (r.ibmSerialNo || '').trim();
       // Normalise to ISO YYYY-MM-DD so the key always matches the ILC-computed dateStr
-      var dateStr = _toISODate((r.date || '').trim());
+      var rawDate = (r.date || '').trim();
+      var dateStr = _toISODate(rawDate);
       if (!serial || !dateStr) return;
 
       // Skip exact duplicate serial+date+status docs from re-uploads
@@ -8777,16 +8815,24 @@ async function detectIlcVariances() {
       if (_monDedup[dedupKey]) return;
       _monDedup[dedupKey] = true;
 
-      var mapKey  = serial + '|' + dateStr;
+      var mapKey   = serial + '|' + dateStr;
       var incoming = { status: r.status || '', duration: r.duration || '' };
       var existing = mondayDayMap[mapKey];
 
       if (!existing) {
         // First record for this person+date
         mondayDayMap[mapKey] = incoming;
+        _dbg.step3.final.push({ key: mapKey, serial: serial, dateRaw: rawDate, dateISO: dateStr, status: incoming.status, duration: incoming.duration, action: 'SET (first)' });
       } else if (_mondayStatusPriority(incoming.status) < _mondayStatusPriority(existing.status)) {
         // Incoming has higher priority (e.g. presence beats Rest Day) — replace
+        _dbg.step3.displaced.push({ key: mapKey, displaced: existing.status, winner: incoming.status, reason: 'priority: ' + _mondayStatusPriority(incoming.status) + ' < ' + _mondayStatusPriority(existing.status) });
         mondayDayMap[mapKey] = incoming;
+        // Update the final log entry for this key
+        var fi = _dbg.step3.final.findIndex ? _dbg.step3.final.findIndex(function(x) { return x.key === mapKey; }) : -1;
+        if (fi !== -1) _dbg.step3.final[fi] = { key: mapKey, serial: serial, dateRaw: rawDate, dateISO: dateStr, status: incoming.status, duration: incoming.duration, action: 'REPLACED (higher priority)' };
+        else _dbg.step3.final.push({ key: mapKey, serial: serial, dateRaw: rawDate, dateISO: dateStr, status: incoming.status, duration: incoming.duration, action: 'REPLACED (higher priority)' });
+      } else {
+        _dbg.step3.displaced.push({ key: mapKey, displaced: incoming.status, winner: existing.status, reason: 'kept existing (same or higher priority)' });
       }
       // Otherwise keep the existing higher-priority record
     });
@@ -8826,6 +8872,7 @@ async function detectIlcVariances() {
         // ILC has a clocking but Monday has no record at all for this person+date
         varianceFlag   = 'Yes';
         varianceReason = 'No Monday.com record found for ' + entry.date;
+        _dbg.step4.noMonday.push({ key: ilcKeys[i], serial: entry.serial, name: entry.name, date: entry.date, ilcActivity: entry.ilcActivity, ilcClocking: entry.ilcClocking });
 
       } else {
         // Single canonical record — run the variance rule against it
@@ -8836,6 +8883,9 @@ async function detectIlcVariances() {
         if (chk.variance === 'Yes') {
           varianceFlag   = 'Yes';
           varianceReason = chk.reason;
+          _dbg.step4.variance.push({ key: ilcKeys[i], serial: entry.serial, name: entry.name, date: entry.date, ilcActivity: entry.ilcActivity, ilcClocking: entry.ilcClocking, mondayStatus: mondayRec.status, mondayDuration: mondayRec.duration, reason: chk.reason });
+        } else {
+          _dbg.step4.noVariance.push({ key: ilcKeys[i], serial: entry.serial, name: entry.name, date: entry.date, ilcActivity: entry.ilcActivity, ilcClocking: entry.ilcClocking, mondayStatus: mondayRec.status, mondayDuration: mondayRec.duration });
         }
       }
 
@@ -8874,11 +8924,78 @@ async function detectIlcVariances() {
     }
 
     if (batchCount > 0) await batch.commit();
+    _dbg.written = totalWritten;
+
+    // ── Dump full debug report to console ────────────────────────────────────
+    console.groupCollapsed('%c[ILC Detect] ✅ Full Debug Report — ' + _dbg.session, 'color:#4ade80;font-weight:bold;font-size:13px;');
+
+    console.groupCollapsed('🔧 Session / Filter');
+    console.log('Session:', _dbg.session);
+    console.log('Filter :', _dbg.filter);
+    console.groupEnd();
+
+    console.groupCollapsed('🗑 Step 0 — Cleared stale variance docs');
+    console.log('Deleted:', _dbg.step0.deletedCount);
+    console.groupEnd();
+
+    console.groupCollapsed('📥 Step 1 — Raw Firestore fetch');
+    console.log('ILC (monthlyAttendance) docs :', _dbg.step1.ilcDocs);
+    console.log('Monday (mondayAttendance) docs:', _dbg.step1.mondayDocs);
+    console.groupEnd();
+
+    console.groupCollapsed('📋 Step 2 — ILC day-map build  (' + Object.keys(ilcDayMap).length + ' entries)');
+    if (_dbg.step2.skipped.length) {
+      console.groupCollapsed('⚠️  Skipped ILC docs (' + _dbg.step2.skipped.length + ')');
+      console.table(_dbg.step2.skipped);
+      console.groupEnd();
+    }
+    console.groupCollapsed('✅ Expanded day entries (' + _dbg.step2.expanded.length + ')');
+    console.table(_dbg.step2.expanded);
+    console.groupEnd();
+    console.groupEnd();
+
+    console.groupCollapsed('📋 Step 3 — Monday day-map build  (' + Object.keys(mondayDayMap).length + ' canonical entries)');
+    console.groupCollapsed('📄 All raw Monday docs seen (' + _dbg.step3.raw.length + ')');
+    console.table(_dbg.step3.raw);
+    console.groupEnd();
+    if (_dbg.step3.displaced.length) {
+      console.groupCollapsed('🔀 Priority displacements / keeps (' + _dbg.step3.displaced.length + ')');
+      console.table(_dbg.step3.displaced);
+      console.groupEnd();
+    }
+    console.groupCollapsed('✅ Final canonical record per serial+date (' + _dbg.step3.final.length + ')');
+    console.table(_dbg.step3.final);
+    console.groupEnd();
+    console.groupEnd();
+
+    console.groupCollapsed('⚖️  Step 4 — Comparison results');
+    console.groupCollapsed('❌ No Monday record found (' + _dbg.step4.noMonday.length + ')');
+    console.table(_dbg.step4.noMonday);
+    console.groupEnd();
+    console.groupCollapsed('✅ No Variance (' + _dbg.step4.noVariance.length + ')');
+    console.table(_dbg.step4.noVariance);
+    console.groupEnd();
+    console.groupCollapsed('🚨 Variance flagged (' + _dbg.step4.variance.length + ')');
+    console.table(_dbg.step4.variance);
+    console.groupEnd();
+    console.groupEnd();
+
+    console.groupCollapsed('💾 Written to Firestore');
+    console.log('Total variance docs written:', _dbg.written);
+    console.groupEnd();
+
+    console.groupEnd(); // root group
+    // ─────────────────────────────────────────────────────────────────────────
 
     showToast('ILC variance detection complete — ' + totalWritten + ' variance(s) written.', '✅');
     if (detectBtn) { detectBtn.disabled = false; detectBtn.textContent = '🔍 Detect Variances'; }
     loadIlcVariance(true);
   } catch(err) {
+    // Dump whatever was collected before the crash
+    console.groupCollapsed('%c[ILC Detect] ❌ Debug Report (errored) — ' + _dbg.session, 'color:#f87171;font-weight:bold;font-size:13px;');
+    console.log('Error:', err.message || err);
+    console.log('_dbg snapshot:', JSON.parse(JSON.stringify(_dbg)));
+    console.groupEnd();
     showToast('Error detecting ILC variances: ' + (err.message || err), '❌');
     if (detectBtn) { detectBtn.disabled = false; detectBtn.textContent = '🔍 Detect Variances'; }
     console.error('detectIlcVariances:', err);
