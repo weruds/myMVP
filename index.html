@@ -8311,8 +8311,9 @@ function _closeClearVarianceModal() {
 }
 
 function _confirmClearVariance() {
+  var fn = _clearVariancePending;
   _closeClearVarianceModal();
-  if (_clearVariancePending) _clearVariancePending();
+  if (fn) fn();
 }
 
 async function clearWfhVariances() {
