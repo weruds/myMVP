@@ -8270,10 +8270,14 @@ function _mondayDateFromWeekending(weekendingStr) {
 // ── Apply ILC 7-rule variance logic
 // Returns { variance: 'Yes'|'No', reason: '' }
 function _applyIlcVarianceRule(ilcRec, mondayRec) {
-  var mStatus  = (mondayRec && mondayRec.status) ? mondayRec.status : '';
-  var mBase    = _statusBaseType(mStatus);
-  var mHalfDay = _isHalfDayStatus(mStatus);
-  var ilcAct   = (ilcRec.activity || '').trim().toUpperCase();
+  var mStatus   = (mondayRec && mondayRec.status)   ? mondayRec.status   : '';
+  var mDuration = (mondayRec && mondayRec.duration) ? mondayRec.duration : '';
+  var mBase     = _statusBaseType(mStatus);
+  var mHalfDay  = _isHalfDayStatus(mStatus) ||
+                  mDuration.indexOf('Morning (AM)')   !== -1 ||
+                  mDuration.indexOf('Afternoon (PM)') !== -1;
+  var mFullDay  = mDuration.indexOf('Full Day') !== -1;
+  var ilcAct    = (ilcRec.activity || '').trim().toUpperCase();
   var ilcMonHrs = parseFloat(ilcRec.monday || 0) || 0;
 
   // ILC may have multiple activities stored comma-separated (e.g. "GB, SL")
@@ -8284,77 +8288,124 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
   var hasCDO = ilcActList.indexOf('CDO')  !== -1;
   var hasHOL = ilcActList.indexOf('HOL')  !== -1 || ilcActList.indexOf('OHOL') !== -1;
 
-  // activityByDay for Monday gives per-activity hours when split day
+  // Resolve per-day hours from activityByDay breakdown
   var abdMon = (ilcRec.activityByDay && ilcRec.activityByDay.monday) || null;
-  var gbHrs  = 0, slHrs = 0, vlHrs = 0;
+  var gbHrs = 0, slHrs = 0, vlHrs = 0, cdoHrs = 0, holHrs = 0, leaveHrs = 0;
   if (Array.isArray(abdMon)) {
     abdMon.forEach(function(e) {
       var code = (typeof e === 'object' ? e.code : e || '').trim().toUpperCase();
       var hrs  = (typeof e === 'object' ? parseFloat(e.hrs || 0) : 0) || 0;
-      if (code === 'GB')  gbHrs  = hrs;
-      if (code === 'SL')  slHrs  = hrs;
-      if (code === 'VL')  vlHrs  = hrs;
+      if (code === 'GB')                      gbHrs  = hrs;
+      else if (code === 'SL')               { slHrs  = hrs; leaveHrs += hrs; }
+      else if (code === 'VL')               { vlHrs  = hrs; leaveHrs += hrs; }
+      else if (code === 'CDO')              { cdoHrs = hrs; leaveHrs += hrs; }
+      else if (code === 'HOL' || code === 'OHOL') { holHrs = hrs; leaveHrs += hrs; }
+      else                                  { leaveHrs += hrs; }
     });
   } else {
-    // Single activity: all Monday hours are for that activity
+    // Single activity: all hours belong to that activity
     if (hasGB)  gbHrs  = ilcMonHrs;
     if (hasSL)  slHrs  = ilcMonHrs;
     if (hasVL)  vlHrs  = ilcMonHrs;
+    if (hasCDO) cdoHrs = ilcMonHrs;
+    if (hasHOL) holHrs = ilcMonHrs;
+    if (!hasGB) leaveHrs = ilcMonHrs;
   }
 
-  // Rule 6 — Emergency: skip all checks
+  // ── Helper: is this Monday status a "presence" status (not leave)?
+  var isPresenceStatus = (mBase === 'Office' || mBase === 'Remote (Scheduled)' ||
+                          mBase === 'Remote (Unscheduled)' || mBase === 'Unscheduled');
+
+  // Rule 0 — Emergency: skip all checks
   if (ilcActList.indexOf('EMPL') !== -1 || mBase === 'Emergency') {
     return { variance: 'No', reason: 'Emergency leave — exempt' };
   }
 
-  // Rule 3 — GB=9 but Monday is a leave status
-  if (hasGB && ilcMonHrs === 9 && mBase !== '' && mBase !== 'Office' &&
-      mBase !== 'Remote (Scheduled)' && mBase !== 'Remote (Unscheduled)' && mBase !== 'Unscheduled') {
-    return { variance: 'Yes', reason: 'ILC GB/9h but Monday is leave: ' + mStatus };
+  // ── BRANCH A: Monday status is a presence type (Office / Remote) ─────────
+
+  // Rule 1 — GB=9 and Monday is presence → no variance
+  if (hasGB && ilcMonHrs === 9 && isPresenceStatus) {
+    return { variance: 'No', reason: '' };
   }
 
-  // Rule 1 — GB=9, Monday must be Office/Remote
-  if (hasGB && ilcMonHrs === 9) {
-    if (mBase === 'Office' || mBase === 'Remote (Scheduled)' || mBase === 'Remote (Unscheduled)' || mBase === 'Unscheduled') {
-      return { variance: 'No', reason: '' };
-    }
+  // Rule 1b — GB=9 but Monday is NOT presence → variance
+  if (hasGB && ilcMonHrs === 9 && !isPresenceStatus && mBase !== '') {
     return { variance: 'Yes', reason: 'ILC GB/9h but Monday is: ' + mStatus };
   }
 
-  // Rule 4 — Half-day GB + SL
-  if (hasGB && hasSL && (gbHrs === 4.5 || gbHrs === 4) && slHrs === 4) {
-    if (mBase === 'Sick' && mHalfDay) return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC half-day GB+SL but Monday not Sick AM/PM: ' + mStatus };
+  // ── BRANCH B: Monday status is a leave type — check duration ─────────────
+
+  // Rule 2 — Monday leave, Half-day (AM or PM)
+  // ILC must have: GB = 4.5 or 5h  AND  leave activity = 4h
+  if (!isPresenceStatus && mHalfDay && mBase !== '') {
+    var expectedLeaveHrs = 4;
+    var gbOk    = (gbHrs === 4.5 || gbHrs === 5 || gbHrs === 4);
+    var leaveOk = (leaveHrs === expectedLeaveHrs);
+    // Validate the leave type matches Monday base
+    var leaveTypeOk = false;
+    if      (mBase === 'Sick')     leaveTypeOk = hasSL;
+    else if (mBase === 'Vacation') leaveTypeOk = hasVL;
+    else if (mBase === 'CDO')      leaveTypeOk = hasCDO;
+    else if (mBase === 'Holiday')  leaveTypeOk = hasHOL;
+    else                           leaveTypeOk = (leaveHrs > 0);  // unknown leave — just check hours
+    if (gbOk && leaveOk && leaveTypeOk) {
+      return { variance: 'No', reason: '' };
+    }
+    var reason = 'Monday ' + mStatus + ': expected GB(4.5/5h)+leave(4h) in ILC, got GB=' + gbHrs + 'h leave=' + leaveHrs + 'h';
+    return { variance: 'Yes', reason: reason };
   }
 
-  // Rule 5 — Half-day GB + VL
-  if (hasGB && hasVL && (gbHrs === 4.5 || gbHrs === 4) && vlHrs === 4) {
-    if (mBase === 'Vacation' && mHalfDay) return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC half-day GB+VL but Monday not Vacation AM/PM: ' + mStatus };
+  // Rule 3 — Monday leave, Full Day
+  // ILC must have: NO GB for that day, leave activity = 8h
+  if (!isPresenceStatus && mFullDay && mBase !== '') {
+    var expectedFullHrs = 8;
+    var noGb     = (gbHrs === 0);
+    var leaveOk2 = (leaveHrs === expectedFullHrs);
+    // Validate the leave type matches Monday base
+    var leaveTypeOk2 = false;
+    if      (mBase === 'Sick')     leaveTypeOk2 = hasSL && (slHrs === expectedFullHrs);
+    else if (mBase === 'Vacation') leaveTypeOk2 = hasVL && (vlHrs === expectedFullHrs);
+    else if (mBase === 'CDO')      leaveTypeOk2 = hasCDO && (cdoHrs === expectedFullHrs);
+    else if (mBase === 'Holiday')  leaveTypeOk2 = hasHOL && (holHrs === expectedFullHrs);
+    else                           leaveTypeOk2 = (leaveHrs === expectedFullHrs);
+    if (noGb && leaveOk2 && leaveTypeOk2) {
+      return { variance: 'No', reason: '' };
+    }
+    var reason2 = '';
+    if (!noGb) {
+      reason2 = 'Monday ' + mStatus + ' (Full Day): ILC still has GB=' + gbHrs + 'h — expected no GB';
+    } else if (!leaveTypeOk2) {
+      reason2 = 'Monday ' + mStatus + ' (Full Day): ILC leave=' + leaveHrs + 'h — expected 8h of matching leave';
+    } else {
+      reason2 = 'Monday ' + mStatus + ' (Full Day): ILC clocking mismatch (GB=' + gbHrs + 'h, leave=' + leaveHrs + 'h)';
+    }
+    return { variance: 'Yes', reason: reason2 };
   }
 
-  // Rule 7 — CDO=8, Monday must be CDO
-  if (hasCDO && ilcMonHrs === 8) {
-    if (mBase === 'CDO') return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC CDO/8h but Monday is: ' + mStatus };
+  // ── BRANCH C: Monday leave with no duration set — fall back to type check ─
+
+  // Rule 4 — CDO: Monday=CDO, ILC must have CDO=8 and no GB
+  if (mBase === 'CDO') {
+    if (hasCDO && gbHrs === 0 && (cdoHrs === 8 || ilcMonHrs === 8)) return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC CDO mismatch — Monday=CDO, ILC=' + ilcAct + '/' + ilcMonHrs + 'h' };
   }
 
-  // Rule 2 — Leave activity mapping
-  if (hasVL) {
-    if (mBase === 'Vacation') return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC=VL but Monday=' + mStatus };
-  }
-  if (hasSL) {
-    if (mBase === 'Sick') return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC=SL but Monday=' + mStatus };
-  }
-  if (hasCDO) {
-    if (mBase === 'CDO') return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC=CDO but Monday=' + mStatus };
-  }
-  if (hasHOL) {
-    if (mBase === 'Holiday') return { variance: 'No', reason: '' };
+  // Rule 5 — Holiday
+  if (mBase === 'Holiday') {
+    if (hasHOL && gbHrs === 0) return { variance: 'No', reason: '' };
     return { variance: 'Yes', reason: 'ILC=HOL/OHOL but Monday=' + mStatus };
+  }
+
+  // Rule 6 — Vacation with no duration: ILC must be VL, no GB
+  if (mBase === 'Vacation') {
+    if (hasVL && gbHrs === 0) return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC=VL mismatch — Monday=' + mStatus + ', ILC=' + ilcAct };
+  }
+
+  // Rule 7 — Sick with no duration: ILC must be SL, no GB
+  if (mBase === 'Sick') {
+    if (hasSL && gbHrs === 0) return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC=SL mismatch — Monday=' + mStatus + ', ILC=' + ilcAct };
   }
 
   return { variance: 'No', reason: '' };
