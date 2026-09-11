@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.4.8 | 2026-09-11 -->
+     Build: v1.4.9 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.8</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.9</span>
     </div>
   </aside>
 
@@ -7077,7 +7077,10 @@ function _parseUploadFile(file, callback) {
   reader.onload = function(e) {
     try {
       var data     = new Uint8Array(e.target.result);
-      var workbook = XLSX.read(data, { type: 'array', cellDates: true });
+      // Do NOT use cellDates:true — it converts date cells to JS Date objects (UTC)
+      // which lose the PH timezone and produce off-by-one dates.
+      // raw:false + dateNF makes SheetJS emit all dates as YYYY-MM-DD strings directly.
+      var workbook = XLSX.read(data, { type: 'array', dateNF: 'yyyy-mm-dd' });
       var sheet    = workbook.Sheets[workbook.SheetNames[0]];
 
       // Auto-detect the real header row: scan the first 10 rows (as raw arrays)
