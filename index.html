@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.4.7 | 2026-09-11 -->
+     Build: v1.4.8 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.7</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.8</span>
     </div>
   </aside>
 
@@ -8642,22 +8642,24 @@ function _mondayDateFromWeekending(weekendingStr) {
 
 // ── Apply ILC variance logic — ILC is the source of truth.
 //
-// ILC activity → required Monday.com status:
-//   GB only       → Office / Remote (Scheduled) / Remote (Unscheduled) / Unscheduled
-//   SL only       → Sick  (any duration)
-//   VL only       → Vacation  (any duration)
-//   HOL / OHOL    → Holiday  (any duration)
-//   CDO only      → CDO  (any duration)
-//   GB + SL       → presence  OR  Sick (half-day AM/PM)
-//   GB + VL       → presence  OR  Vacation (half-day AM/PM)
-//   GB + CDO      → presence  OR  CDO (half-day AM/PM)
-//   GB + HOL/OHOL → presence  OR  Holiday (half-day AM/PM)
+// Cheat sheet (ILC Clocking → accepted Monday Status):
+//   GB            → Office / Remote (Scheduled) / Remote (Unscheduled)
+//   GB, VL        → Office / Remote (Scheduled) / Remote (Unscheduled)
+//                   OR Vacation half-day Morning (AM) / Afternoon (PM)
+//   GB, SL        → Office / Remote (Scheduled) / Remote (Unscheduled)
+//                   OR Sick half-day Morning (AM) / Afternoon (PM)
+//   GB, CDO       → CDO half-day AM/PM  (presence alone not acceptable)
+//   GB, HOL/OHOL  → Holiday half-day AM/PM  (presence alone not acceptable)
+//   VL            → Vacation - Full only
+//   SL            → Sick - Full only
+//   CDO           → CDO only
+//   HOL / OHOL    → Holiday / Vacation / Office / Remote (Scheduled) / Remote (Unscheduled)
+//   PTNW / UTNW   → Emergency-Full / CDO / Vacation-Full /
+//                   Emergency-Morning (AM) / Emergency-Afternoon (PM) / Sick-Full
 //   EMPL          → exempt (no variance)
 //
-// "No Status" on Monday is always a variance when ILC has any clocking.
-// "Rest Day" on Monday is only exempt when the ILC day is a normal weekday
-//  clocking — Saturday/Sunday GB clockings paired with Rest Day ARE variances
-//  (handled by the caller passing the dayOfWeek so we know it's a weekend).
+// Rest Day on Monday is only valid for Sat/Sun (weekend block).
+// Any weekday ILC clocking against a Monday "Rest Day" is always a variance.
 //
 // Returns { variance: 'Yes'|'No', reason: '' }
 function _applyIlcVarianceRule(ilcRec, mondayRec) {
@@ -8667,67 +8669,115 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
   var mHalfDay  = _isHalfDayStatus(mStatus) ||
                   mDuration.indexOf('Morning (AM)')   !== -1 ||
                   mDuration.indexOf('Afternoon (PM)') !== -1;
+  var mFullDay  = mDuration.indexOf('Full Day') !== -1 || mDuration === '';
   var ilcAct    = (ilcRec.activity || '').trim().toUpperCase();
   var ilcMonHrs = parseFloat(ilcRec.monday || 0) || 0;
-  var dayOfWeek = (ilcRec.dayOfWeek || '').toLowerCase();  // 'monday'–'friday', or 'saturday'/'sunday'
+  var dayOfWeek = (ilcRec.dayOfWeek || '').toLowerCase();
   var isWeekend = (dayOfWeek === 'saturday' || dayOfWeek === 'sunday');
 
   // ILC may have multiple activities comma-separated (e.g. "GB, SL")
   var ilcActList = ilcAct.split(',').map(function(a) { return a.trim(); });
-  var hasGB  = ilcActList.indexOf('GB')   !== -1;
-  var hasSL  = ilcActList.indexOf('SL')   !== -1;
-  var hasVL  = ilcActList.indexOf('VL')   !== -1;
-  var hasCDO = ilcActList.indexOf('CDO')  !== -1;
-  var hasHOL = ilcActList.indexOf('HOL')  !== -1 || ilcActList.indexOf('OHOL') !== -1;
+  var hasGB   = ilcActList.indexOf('GB')   !== -1;
+  var hasSL   = ilcActList.indexOf('SL')   !== -1;
+  var hasVL   = ilcActList.indexOf('VL')   !== -1;
+  var hasCDO  = ilcActList.indexOf('CDO')  !== -1;
+  var hasHOL  = ilcActList.indexOf('HOL')  !== -1 || ilcActList.indexOf('OHOL') !== -1;
+  var hasPTNW = ilcActList.indexOf('PTNW') !== -1;
+  var hasUTNW = ilcActList.indexOf('UTNW') !== -1;
   var hasLeave = hasSL || hasVL || hasCDO || hasHOL;
 
-  var isPresence = (mBase === 'Office' || mBase === 'Remote (Scheduled)' ||
-                    mBase === 'Remote (Unscheduled)' || mBase === 'Unscheduled');
+  // Presence statuses (Office / Remote variants) — excludes Unscheduled per cheat sheet
+  var isPresence = (mBase === 'Office' ||
+                    mBase === 'Remote (Scheduled)' ||
+                    mBase === 'Remote (Unscheduled)');
 
-  // Exempt: ILC has Emergency leave (EMPL)
+  // ── EMPL: Pre/Post IBM employment period — always exempt ─────────────────
   if (ilcActList.indexOf('EMPL') !== -1) {
     return { variance: 'No', reason: 'Emergency leave — exempt' };
   }
 
-  // Any clocking on a weekend day is a variance regardless of Monday status
-  // (Rest Day, Remote (Unscheduled), or anything else).
+  // ── Weekend: any clocking on Sat/Sun is always a variance ────────────────
   if (isWeekend) {
     return { variance: 'Yes', reason: 'Weekend clocking — ' + dayOfWeek + ' has ' + ilcAct + '/' + ilcMonHrs + 'h but Monday is: ' + (mBase || 'No Status') };
   }
 
-  // Rest Day on a weekday is always a variance — Rest Day is only valid for
-  // Saturday/Sunday (handled by the weekend block above).
+  // ── PTNW / UTNW: Emergency leave ─────────────────────────────────────────
+  // Accepted: Emergency-Full, CDO, Vacation-Full,
+  //           Emergency-Morning (AM), Emergency-Afternoon (PM), Sick-Full
+  if (hasPTNW || hasUTNW) {
+    if (mBase === 'Emergency' && (mHalfDay || mFullDay)) return { variance: 'No', reason: '' };
+    if (mBase === 'CDO')      return { variance: 'No', reason: '' };
+    if (mBase === 'Vacation'  && mFullDay) return { variance: 'No', reason: '' };
+    if (mBase === 'Sick'      && mFullDay) return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC is ' + ilcAct + ' but Monday is: ' + (mStatus || 'No Status') };
+  }
 
-  // ── GB only: Monday must be a presence status ─────────────────────────────
+  // ── Rest Day on a weekday is always a variance ────────────────────────────
+  // Rest Day is only valid for Sat/Sun (handled above).
+
+  // ── GB only ───────────────────────────────────────────────────────────────
+  // Accepted: Office / Remote (Scheduled) / Remote (Unscheduled)
   if (hasGB && !hasLeave) {
     if (isPresence) return { variance: 'No', reason: '' };
-    var gbLabel = mBase || 'No Status';
-    return { variance: 'Yes', reason: 'ILC is GB/' + ilcMonHrs + 'h but Monday is: ' + gbLabel };
+    return { variance: 'Yes', reason: 'ILC is GB/' + ilcMonHrs + 'h but Monday is: ' + (mBase || 'No Status') };
   }
 
-  // ── GB + leave (half-day split) ───────────────────────────────────────────
-  // Monday must be the matching leave type as a half-day (AM/PM).
-  // Presence-only on Monday is NOT acceptable — ILC shows leave was taken.
-  if (hasGB && hasLeave) {
-    var ilcLeaveType = hasSL  ? 'Sick'
-                    : hasVL  ? 'Vacation'
-                    : hasCDO ? 'CDO'
-                    :          'Holiday';
-    if (mBase === ilcLeaveType && mHalfDay) return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC=GB+' + ilcLeaveType + ' but Monday is: ' + (mStatus || 'No Status') };
+  // ── GB + VL (half-day vacation split) ────────────────────────────────────
+  // Accepted: Office/Remote (worked the other half) OR Vacation half-day AM/PM
+  if (hasGB && hasVL && !hasSL && !hasCDO && !hasHOL) {
+    if (isPresence) return { variance: 'No', reason: '' };
+    if (mBase === 'Vacation' && mHalfDay) return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC=GB+VL but Monday is: ' + (mStatus || 'No Status') };
   }
 
-  // ── Leave only (no GB) ────────────────────────────────────────────────────
-  // Monday must show the exact matching leave type.
-  // HOL exception: Office/Remote is also valid (person worked on a public holiday).
-  if (!hasGB && hasLeave) {
-    var ilcLeaveType = hasSL  ? 'Sick'
-                    : hasVL  ? 'Vacation'
-                    : hasCDO ? 'CDO'
-                    :          'Holiday';
-    if (mBase === ilcLeaveType) return { variance: 'No', reason: '' };
-    if (hasHOL && (isPresence || mBase === 'Vacation')) return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC is ' + ilcLeaveType + ' but Monday is: ' + (mStatus || 'No Status') };
+  // ── GB + SL (half-day sick split) ────────────────────────────────────────
+  // Accepted: Office/Remote (worked the other half) OR Sick half-day AM/PM
+  if (hasGB && hasSL && !hasVL && !hasCDO && !hasHOL) {
+    if (isPresence) return { variance: 'No', reason: '' };
+    if (mBase === 'Sick' && mHalfDay) return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC=GB+SL but Monday is: ' + (mStatus || 'No Status') };
+  }
+
+  // ── GB + CDO (half-day CDO split) ────────────────────────────────────────
+  // Accepted: CDO half-day AM/PM only
+  if (hasGB && hasCDO) {
+    if (mBase === 'CDO' && mHalfDay) return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC=GB+CDO but Monday is: ' + (mStatus || 'No Status') };
+  }
+
+  // ── GB + HOL/OHOL (half-day holiday split) ───────────────────────────────
+  // Accepted: Holiday half-day AM/PM only
+  if (hasGB && hasHOL) {
+    if (mBase === 'Holiday' && mHalfDay) return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC=GB+HOL but Monday is: ' + (mStatus || 'No Status') };
+  }
+
+  // ── VL only ───────────────────────────────────────────────────────────────
+  // Accepted: Vacation - Full only
+  if (!hasGB && hasVL && !hasSL && !hasCDO && !hasHOL) {
+    if (mBase === 'Vacation' && mFullDay) return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC is VL but Monday is: ' + (mStatus || 'No Status') };
+  }
+
+  // ── SL only ───────────────────────────────────────────────────────────────
+  // Accepted: Sick - Full only
+  if (!hasGB && hasSL && !hasVL && !hasCDO && !hasHOL) {
+    if (mBase === 'Sick' && mFullDay) return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC is SL but Monday is: ' + (mStatus || 'No Status') };
+  }
+
+  // ── CDO only ──────────────────────────────────────────────────────────────
+  // Accepted: CDO only
+  if (!hasGB && hasCDO && !hasSL && !hasVL && !hasHOL) {
+    if (mBase === 'CDO') return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC is CDO but Monday is: ' + (mStatus || 'No Status') };
+  }
+
+  // ── HOL / OHOL only ───────────────────────────────────────────────────────
+  // Accepted: Holiday / Vacation / Office / Remote (Scheduled) / Remote (Unscheduled)
+  if (!hasGB && hasHOL) {
+    if (mBase === 'Holiday' || mBase === 'Vacation' || isPresence) return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC is HOL but Monday is: ' + (mStatus || 'No Status') };
   }
 
   // Fallback — unrecognised ILC combination, no variance assumed
