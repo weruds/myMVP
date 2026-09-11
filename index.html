@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.4.1 | 2026-09-11 -->
+     Build: v1.4.2 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.1</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.2</span>
     </div>
   </aside>
 
@@ -8664,9 +8664,15 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
     return { variance: 'No', reason: 'Emergency leave — exempt' };
   }
 
-  // Rest Day on Monday.com: exempt only for normal weekday clockings.
-  // Weekend clockings paired with Rest Day are a variance (Weekend-Rest Day).
-  if (mBase === 'Rest Day' && !isWeekend) {
+  // Any clocking on a weekend day is a variance regardless of Monday status
+  // (Rest Day, Remote (Unscheduled), or anything else).
+  if (isWeekend) {
+    return { variance: 'Yes', reason: 'Weekend clocking — ' + dayOfWeek + ' has ' + ilcAct + '/' + ilcMonHrs + 'h but Monday is: ' + (mBase || 'No Status') };
+  }
+
+  // Rest Day on Monday.com: weekday clockings against Rest Day are exempt
+  // (scheduled day off — not a variance).
+  if (mBase === 'Rest Day') {
     return { variance: 'No', reason: '' };
   }
 
@@ -8678,19 +8684,19 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
   }
 
   // ── GB + leave (half-day split) ───────────────────────────────────────────
-  // Monday must be: presence  OR  matching leave type as a half-day (AM/PM)
+  // Monday must be the matching leave type as a half-day (AM/PM).
+  // Presence-only on Monday is NOT acceptable — ILC shows leave was taken.
   if (hasGB && hasLeave) {
     var ilcLeaveType = hasSL  ? 'Sick'
                     : hasVL  ? 'Vacation'
                     : hasCDO ? 'CDO'
                     :          'Holiday';
-    if (isPresence) return { variance: 'No', reason: '' };
     if (mBase === ilcLeaveType && mHalfDay) return { variance: 'No', reason: '' };
     return { variance: 'Yes', reason: 'ILC=GB+' + ilcLeaveType + ' but Monday is: ' + (mStatus || 'No Status') };
   }
 
   // ── Leave only (no GB) ────────────────────────────────────────────────────
-  // Monday must show the exact matching leave type
+  // Monday must show the exact matching leave type.
   if (!hasGB && hasLeave) {
     var ilcLeaveType = hasSL  ? 'Sick'
                     : hasVL  ? 'Vacation'
