@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.4.3 | 2026-09-11 -->
+     Build: v1.4.4 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.3</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.4</span>
     </div>
   </aside>
 
@@ -8733,7 +8733,7 @@ var _MONTH_ORDER = {};
 _MONTH_NAMES.forEach(function(m, i) { _MONTH_ORDER[m] = i; });
 
 function _buildIlcVarYearMonthIndex() {
-  // Collect { year, month } pairs from both attendance collections.
+  // Collect { year, month } pairs from attendance collections and variance records.
   var index = {};   // year → Set of month names
   function _add(r) {
     var y = String(r.year || (r.weekending || r.date || '').substring(0, 4) || '');
@@ -8744,6 +8744,9 @@ function _buildIlcVarYearMonthIndex() {
   }
   _monthlyAttRecords.forEach(_add);
   _mondayAttRecords.forEach(_add);
+  if (typeof _ilcVarianceRecords !== 'undefined') {
+    _ilcVarianceRecords.forEach(_add);
+  }
   return index;
 }
 
