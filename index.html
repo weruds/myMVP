@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.3.9 | 2026-09-11 -->
+     Build: v1.4.0 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.3.9</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.0</span>
     </div>
   </aside>
 
@@ -8567,9 +8567,15 @@ function _toISODate(raw) {
   }
   // Already ISO YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  // Try direct parse with UTC anchor (handles ISO datetime strings too)
-  var d = new Date(s.indexOf('T') !== -1 ? s : s + 'T00:00:00Z');
-  if (!isNaN(d.getTime())) return d.toISOString().substring(0, 10);
+  // Try direct parse with UTC anchor — only for strings that already contain
+  // a 'T' (ISO datetime strings like "2026-08-14T00:00:00Z").
+  // Do NOT append T00:00:00Z to human-readable strings like "Aug 14, 2026"
+  // because the result is an invalid/ambiguous format that V8 may parse as
+  // local time, causing a 1-day shift in UTC+8 (e.g. Aug 14 → Aug 13).
+  if (s.indexOf('T') !== -1) {
+    var d = new Date(s);
+    if (!isNaN(d.getTime())) return d.toISOString().substring(0, 10);
+  }
   // MM/DD/YYYY or M/D/YYYY
   var slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (slash) {
@@ -8610,7 +8616,19 @@ function _mondayDateFromWeekending(weekendingStr) {
 }
 
 // ── Apply ILC variance logic — ILC is the source of truth.
-// Branch on what ILC recorded, then verify Monday agrees.
+//
+// Rules (ILC → expected Monday status):
+//   GB only        → Office / Remote (Scheduled) / Remote (Unscheduled) / Unscheduled
+//   SL only        → Sick  (any duration)
+//   VL only        → Vacation  (any duration)
+//   HOL / OHOL     → Designated Holiday  (any duration)
+//   CDO only       → CDO  (any duration)
+//   GB + SL        → presence  OR  Sick + Morning/Afternoon (half-day)
+//   GB + VL        → presence  OR  Vacation + Morning/Afternoon (half-day)
+//   GB + CDO       → presence  OR  CDO + Morning/Afternoon (half-day)
+//   GB + HOL/OHOL  → presence  OR  Designated Holiday + Morning/Afternoon (half-day)
+//   EMPL           → exempt (no variance)
+//
 // Returns { variance: 'Yes'|'No', reason: '' }
 function _applyIlcVarianceRule(ilcRec, mondayRec) {
   var mStatus   = (mondayRec && mondayRec.status)   ? mondayRec.status   : '';
@@ -8619,7 +8637,6 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
   var mHalfDay  = _isHalfDayStatus(mStatus) ||
                   mDuration.indexOf('Morning (AM)')   !== -1 ||
                   mDuration.indexOf('Afternoon (PM)') !== -1;
-  var mFullDay  = mDuration.indexOf('Full Day') !== -1;
   var ilcAct    = (ilcRec.activity || '').trim().toUpperCase();
   var ilcMonHrs = parseFloat(ilcRec.monday || 0) || 0;
 
@@ -8632,108 +8649,49 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
   var hasHOL = ilcActList.indexOf('HOL')  !== -1 || ilcActList.indexOf('OHOL') !== -1;
   var hasLeave = hasSL || hasVL || hasCDO || hasHOL;
 
-  // Resolve per-day hours from activityByDay breakdown
-  var abdMon = (ilcRec.activityByDay && ilcRec.activityByDay.monday) || null;
-  var gbHrs = 0, slHrs = 0, vlHrs = 0, cdoHrs = 0, holHrs = 0, leaveHrs = 0;
-  if (Array.isArray(abdMon)) {
-    abdMon.forEach(function(e) {
-      var code = (typeof e === 'object' ? e.code : e || '').trim().toUpperCase();
-      var hrs  = (typeof e === 'object' ? parseFloat(e.hrs || 0) : 0) || 0;
-      if (code === 'GB')                           gbHrs   = hrs;
-      else if (code === 'SL')                    { slHrs   = hrs; leaveHrs += hrs; }
-      else if (code === 'VL')                    { vlHrs   = hrs; leaveHrs += hrs; }
-      else if (code === 'CDO')                   { cdoHrs  = hrs; leaveHrs += hrs; }
-      else if (code === 'HOL' || code === 'OHOL'){ holHrs  = hrs; leaveHrs += hrs; }
-      else                                        { leaveHrs += hrs; }
-    });
-  } else {
-    if (hasGB)  gbHrs    = ilcMonHrs;
-    if (hasSL)  { slHrs  = ilcMonHrs; leaveHrs = ilcMonHrs; }
-    if (hasVL)  { vlHrs  = ilcMonHrs; leaveHrs = ilcMonHrs; }
-    if (hasCDO) { cdoHrs = ilcMonHrs; leaveHrs = ilcMonHrs; }
-    if (hasHOL) { holHrs = ilcMonHrs; leaveHrs = ilcMonHrs; }
-  }
-
   var isPresence = (mBase === 'Office' || mBase === 'Remote (Scheduled)' ||
                     mBase === 'Remote (Unscheduled)' || mBase === 'Unscheduled');
 
-  // Rule 0 — Emergency leave on either side: exempt
+  // Exempt: Emergency leave on either side
   if (ilcActList.indexOf('EMPL') !== -1 || mBase === 'Emergency') {
     return { variance: 'No', reason: 'Emergency leave — exempt' };
   }
 
-  // Rule 0.5 — Monday is Rest Day: scheduled day off, never a variance
+  // Rest Day on Monday.com is always a scheduled day off — never a variance
   if (mBase === 'Rest Day') {
     return { variance: 'No', reason: '' };
   }
 
-  // ── BRANCH A: ILC = GB only (pure work day, no leave) ────────────────────
-  // ILC says the employee worked a full day. Monday must agree with a presence status.
-
+  // ── GB only: Monday must be a presence status ─────────────────────────────
   if (hasGB && !hasLeave) {
-    // GB=9 (or any standard work hours) — Monday must be a presence status
     if (isPresence) return { variance: 'No', reason: '' };
-    // Monday recorded something other than a work status — variance
-    return { variance: 'Yes', reason: 'ILC is GB/' + ilcMonHrs + 'h but Monday is: ' + (mStatus || 'no status') };
+    return { variance: 'Yes', reason: 'ILC is GB/' + ilcMonHrs + 'h but Monday is leave: ' + (mBase || 'no status') };
   }
 
-  // ── BRANCH B: ILC = GB + leave (half-day split) ───────────────────────────
-  // ILC says the employee worked a partial day and took leave for the rest.
-  // Monday must show the matching leave type (Sick/Vacation/CDO/Holiday).
-  // A presence-only status on Monday is a variance — it ignores the leave.
-
+  // ── GB + leave (half-day split) ───────────────────────────────────────────
+  // Acceptable on Monday: presence status  OR  matching leave type as half-day
   if (hasGB && hasLeave) {
-    // Determine what leave type ILC recorded
-    var ilcLeaveType = hasSL ? 'Sick' : hasVL ? 'Vacation' : hasCDO ? 'CDO' : 'Holiday';
-    // Monday must match that leave type with a half-day duration
+    var ilcLeaveType = hasSL  ? 'Sick'
+                    : hasVL  ? 'Vacation'
+                    : hasCDO ? 'CDO'
+                    :          'Designated Holiday';
+    // Presence is fine — ILC shows they worked part of the day
+    if (isPresence) return { variance: 'No', reason: '' };
+    // Matching leave type as a half-day is also fine
     if (mBase === ilcLeaveType && mHalfDay) return { variance: 'No', reason: '' };
-    // Monday shows full-day leave → wrong, ILC only has partial leave
-    if (mBase === ilcLeaveType && mFullDay) {
-      return { variance: 'Yes', reason: 'ILC has GB+' + ilcLeaveType + ' (half day) but Monday is ' + mStatus + ' Full Day' };
-    }
-    // ILC = 4 or 4.5h GB + any other activity, Monday = presence → No Variance.
-    // A 4/4.5h GB clocking paired with any other activity is treated as a sufficient
-    // work record; a presence status on Monday is acceptable without flagging leave.
-    if (isPresence && (gbHrs === 4 || gbHrs === 4.5)) {
-      return { variance: 'No', reason: '' };
-    }
-    // Monday shows a presence status → doesn't account for the leave hours in ILC
-    if (isPresence) {
-      return { variance: 'Yes', reason: 'ILC has GB(' + gbHrs + 'h)+' + ilcLeaveType + '(' + leaveHrs + 'h) but Monday is: ' + mStatus };
-    }
-    // Monday shows a different leave type
-    return { variance: 'Yes', reason: 'ILC has GB+' + ilcLeaveType + ' but Monday is: ' + (mStatus || 'no status') };
+    // Anything else is a variance
+    return { variance: 'Yes', reason: 'ILC=GB+' + ilcLeaveType + ' but Monday is: ' + (mStatus || 'no status') };
   }
 
-  // ── BRANCH C: ILC = leave only (full day, no GB) ──────────────────────────
-  // ILC says the employee took a full day of leave. Monday must show matching leave.
-  // A presence status on Monday is a variance — it says they worked when ILC shows leave.
-
+  // ── Leave only (no GB) ────────────────────────────────────────────────────
+  // Monday must show the matching leave type
   if (!hasGB && hasLeave) {
-    var ilcLeaveTypeFull = hasSL ? 'Sick' : hasVL ? 'Vacation' : hasCDO ? 'CDO' : 'Holiday';
-    var expectedMBase    = ilcLeaveTypeFull;
-
-    // Monday matches the leave type (any duration)
-    if (mBase === expectedMBase) return { variance: 'No', reason: '' };
-
-    // Monday is a presence status — completely disagrees with ILC full-day leave
-    if (isPresence) {
-      return { variance: 'Yes', reason: 'ILC is ' + ilcLeaveTypeFull + ' (full day) but Monday is: ' + mStatus };
-    }
-    // Monday is a different leave type
-    return { variance: 'Yes', reason: 'ILC is ' + ilcLeaveTypeFull + ' but Monday is: ' + (mStatus || 'no status') };
-  }
-
-  // ── BRANCH D: ILC = CDO only ──────────────────────────────────────────────
-  if (hasCDO && !hasGB) {
-    if (mBase === 'CDO') return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC is CDO but Monday is: ' + (mStatus || 'no status') };
-  }
-
-  // ── BRANCH E: ILC = Holiday only ─────────────────────────────────────────
-  if (hasHOL && !hasGB) {
-    if (mBase === 'Holiday') return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC is Holiday but Monday is: ' + (mStatus || 'no status') };
+    var ilcLeaveType = hasSL  ? 'Sick'
+                    : hasVL  ? 'Vacation'
+                    : hasCDO ? 'CDO'
+                    :          'Designated Holiday';
+    if (mBase === ilcLeaveType) return { variance: 'No', reason: '' };
+    return { variance: 'Yes', reason: 'ILC is ' + ilcLeaveType + ' but Monday is: ' + (mStatus || 'no status') };
   }
 
   // Fallback — unrecognised combination, no variance assumed
@@ -9170,22 +9128,11 @@ async function detectIlcVariances() {
     // Key: "ibmSerialNo|YYYY-MM-DD"
     // Value: array of unique { status, duration } records for that person+date.
     //
-    // One canonical Monday record per serial+date is kept using a priority rule:
-    //   1. Presence statuses (Office / Remote (Scheduled) / Remote (Unscheduled) / Unscheduled)
-    //   2. Any other status (leave, Rest Day, No Status, etc.)
-    // Within the same priority tier the first Firestore document wins.
-    // This prevents stale Rest Day / Sick records from a previous upload masking
-    // a valid presence record that was uploaded later (or vice-versa).
+    // All unique statuses per serial+date are collected into an array.
+    // Step 4 checks ALL of them — if ANY passes the rule, no variance.
+    // Only if every status fails does a variance get written.
 
-    // Priority rank: lower number = higher priority (kept over higher number)
-    function _mondayStatusPriority(status) {
-      var b = _statusBaseType((status || '').trim());
-      if (b === 'Office' || b === 'Remote (Scheduled)' ||
-          b === 'Remote (Unscheduled)' || b === 'Unscheduled') return 0;
-      return 1;
-    }
-
-    var mondayDayMap = {};  // "serial|YYYY-MM-DD" → { status, duration }  (single best record)
+    var mondayDayMap = {};  // "serial|YYYY-MM-DD" → [{ status, duration }, ...]
     var _monDedup    = {};  // guards serial|date|status exact duplicates
 
     mondaySnap.forEach(function(d) {
@@ -9226,28 +9173,20 @@ async function detectIlcVariances() {
       }
       _monDedup[dedupKey] = true;
 
-      var mapKey   = serial + '|' + dateStr;
-      var incoming = { status: r.status || '', duration: r.duration || '' };
-      var existing = mondayDayMap[mapKey];
-
-      if (!existing) {
-        mondayDayMap[mapKey] = incoming;
-        _dbg('  STEP3 SET (first) key=' + mapKey + ' serial=' + serial + ' dateRaw=' + rawDate + ' dateISO=' + dateStr + ' status=' + incoming.status + ' duration=' + incoming.duration);
-      } else if (_mondayStatusPriority(incoming.status) < _mondayStatusPriority(existing.status)) {
-        _dbg('  STEP3 REPLACE (higher priority) key=' + mapKey + ' displaced=' + existing.status + ' winner=' + incoming.status + ' incomingPri=' + _mondayStatusPriority(incoming.status) + ' existingPri=' + _mondayStatusPriority(existing.status));
-        mondayDayMap[mapKey] = incoming;
-      } else {
-        _dbg('  STEP3 KEEP existing key=' + mapKey + ' kept=' + existing.status + ' incoming=' + incoming.status + ' (same or lower priority)');
-      }
+      var mapKey  = serial + '|' + dateStr;
+      var rec     = { status: r.status || '', duration: r.duration || '' };
+      if (!mondayDayMap[mapKey]) mondayDayMap[mapKey] = [];
+      mondayDayMap[mapKey].push(rec);
+      _dbg('  STEP3 ADD key=' + mapKey + ' serial=' + serial + ' dateRaw=' + rawDate + ' dateISO=' + dateStr + ' status=' + rec.status + ' duration=' + rec.duration + ' total=' + mondayDayMap[mapKey].length);
     });
 
-    _dbg('STEP 3 — Monday day-map complete', { totalCanonical: Object.keys(mondayDayMap).length });
+    _dbg('STEP 3 — Monday day-map complete', { totalKeys: Object.keys(mondayDayMap).length });
 
     // ── Step 4: Compare — one result row per ILC day entry ───────────────────
     // For each ILC day:
-    //   • No Monday record for that person+date → variance "No Monday.com record"
-    //   • The single canonical Monday record passes _applyIlcVarianceRule → No variance
-    //   • The canonical record fails → variance, show its status/reason
+    //   • No Monday records for that person+date → variance "No Monday.com record"
+    //   • ANY of the Monday records passes _applyIlcVarianceRule → No variance
+    //   • ALL records fail → variance (show all statuses found)
 
     var ts         = firebase.firestore.FieldValue.serverTimestamp();
     var batch      = _fbDb.batch();
@@ -9257,14 +9196,13 @@ async function detectIlcVariances() {
 
     var ilcKeys = Object.keys(ilcDayMap);
     for (var i = 0; i < ilcKeys.length; i++) {
-      var entry      = ilcDayMap[ilcKeys[i]];
-      var mondayRec  = mondayDayMap[ilcKeys[i]] || null;  // single canonical record
+      var entry       = ilcDayMap[ilcKeys[i]];
+      var mondayRecs  = mondayDayMap[ilcKeys[i]] || null;  // array of all records for this day
 
       // Build a minimal ILC record shaped the way _applyIlcVarianceRule expects
       var dayIlcRec = {
-        activity:      entry.ilcActivity,
-        monday:        entry.ilcClocking,
-        activityByDay: {}   // already resolved into activity string above
+        activity: entry.ilcActivity,
+        monday:   entry.ilcClocking
       };
 
       var varianceFlag          = 'No';
@@ -9272,24 +9210,38 @@ async function detectIlcVariances() {
       var mondayStatusDisplay   = '';
       var mondayDurationDisplay = '';
 
-      if (!mondayRec) {
+      if (!mondayRecs || mondayRecs.length === 0) {
         // ILC has a clocking but Monday has no record at all for this person+date
         varianceFlag   = 'Yes';
         varianceReason = 'No Monday.com record found for ' + entry.date;
         _dbg('  STEP4 NO-MONDAY key=' + ilcKeys[i] + ' serial=' + entry.serial + ' name=' + entry.name + ' date=' + entry.date + ' ilcActivity=' + entry.ilcActivity + ' ilcHrs=' + entry.ilcClocking);
 
       } else {
-        // Single canonical record — run the variance rule against it
-        mondayStatusDisplay   = mondayRec.status   || '';
-        mondayDurationDisplay = mondayRec.duration || '';
+        // Check all Monday records — if ANY passes the rule, no variance
+        var passed = false;
+        var passingRec = null;
+        for (var j = 0; j < mondayRecs.length; j++) {
+          var chk = _applyIlcVarianceRule(dayIlcRec, mondayRecs[j]);
+          if (chk.variance === 'No') {
+            passed = true;
+            passingRec = mondayRecs[j];
+            break;
+          }
+        }
 
-        var chk = _applyIlcVarianceRule(dayIlcRec, mondayRec);
-        if (chk.variance === 'Yes') {
-          varianceFlag   = 'Yes';
-          varianceReason = chk.reason;
-          _dbg('  STEP4 VARIANCE key=' + ilcKeys[i] + ' serial=' + entry.serial + ' name=' + entry.name + ' date=' + entry.date + ' ilcActivity=' + entry.ilcActivity + ' ilcHrs=' + entry.ilcClocking + ' mondayStatus=' + mondayRec.status + ' mondayDuration=' + (mondayRec.duration||'') + ' reason=' + chk.reason);
+        if (passed) {
+          mondayStatusDisplay   = passingRec.status   || '';
+          mondayDurationDisplay = passingRec.duration || '';
+          _dbg('  STEP4 NO-VARIANCE key=' + ilcKeys[i] + ' serial=' + entry.serial + ' name=' + entry.name + ' date=' + entry.date + ' ilcActivity=' + entry.ilcActivity + ' ilcHrs=' + entry.ilcClocking + ' matchedStatus=' + passingRec.status + ' matchedDuration=' + (passingRec.duration||''));
         } else {
-          _dbg('  STEP4 NO-VARIANCE key=' + ilcKeys[i] + ' serial=' + entry.serial + ' name=' + entry.name + ' date=' + entry.date + ' ilcActivity=' + entry.ilcActivity + ' ilcHrs=' + entry.ilcClocking + ' mondayStatus=' + mondayRec.status + ' mondayDuration=' + (mondayRec.duration||''));
+          // All records failed — variance; show all Monday statuses found
+          var allStatuses = mondayRecs.map(function(r) { return r.status + (r.duration ? ' (' + r.duration + ')' : ''); }).join(' / ');
+          var lastChk = _applyIlcVarianceRule(dayIlcRec, mondayRecs[mondayRecs.length - 1]);
+          varianceFlag          = 'Yes';
+          varianceReason        = lastChk.reason;
+          mondayStatusDisplay   = mondayRecs.map(function(r) { return r.status; }).join(' / ');
+          mondayDurationDisplay = mondayRecs[0].duration || '';
+          _dbg('  STEP4 VARIANCE key=' + ilcKeys[i] + ' serial=' + entry.serial + ' name=' + entry.name + ' date=' + entry.date + ' ilcActivity=' + entry.ilcActivity + ' ilcHrs=' + entry.ilcClocking + ' allStatuses=' + allStatuses + ' reason=' + varianceReason);
         }
       }
 
