@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.4.9 | 2026-09-11 -->
+     Build: v1.5.0 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.9</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.5.0</span>
     </div>
   </aside>
 
@@ -6393,25 +6393,15 @@ function _renderMonthlyAtt() {
     var thu = parseFloat(r.thursday  || 0) || 0;
     var fri = parseFloat(r.friday    || 0) || 0;
 
-    // ── PARKED: Half-day variance logic (do not remove — needs review before re-enabling)
-    // var DAY_KEYS_RENDER = ['saturday','sunday','monday','tuesday','wednesday','thursday','friday'];
-    // var dayVals = { saturday:sat, sunday:sun, monday:mon, tuesday:tue, wednesday:wed, thursday:thu, friday:fri };
-    // var halfDayVarianceCount = 0;
-    // DAY_KEYS_RENDER.forEach(function(dk) {
-    //   var codes = Array.isArray(abd[dk]) ? abd[dk] : (abd[dk] ? [abd[dk]] : []);
-    //   if (codes.length > 1) {
-    //     // This day has multiple activities (half-day). Total for this day must be 8.5.
-    //     if (Math.abs(dayVals[dk] - 8.5) > 0.001) halfDayVarianceCount++;
-    //   }
-    // });
-    // var isVariance = actList.some(function(act) {
-    //   return ILC_VARIANCE_ACTIVITIES.has(act);
-    // }) && [sat,sun,mon,tue,wed,thu,fri].some(function(h) {
-    //   return h > 0 && h !== 8 && Math.abs(h - 8.5) > 0.001 && h !== 9;
-    // });
-    // var hasHalfDayVar = halfDayVarianceCount > 0;
-    var halfDayVarianceCount = 0; // parked — always 0 until logic is re-enabled
-    var hasHalfDayVar = false;
+    // Half-day variance: a day with multiple activities whose total ≠ 8.5h
+    var DAY_KEYS_RENDER = ['saturday','sunday','monday','tuesday','wednesday','thursday','friday'];
+    var dayVals = { saturday:sat, sunday:sun, monday:mon, tuesday:tue, wednesday:wed, thursday:thu, friday:fri };
+    var halfDayVarianceCount = 0;
+    DAY_KEYS_RENDER.forEach(function(dk) {
+      var entries = Array.isArray(abd[dk]) ? abd[dk] : (abd[dk] ? [abd[dk]] : []);
+      if (entries.length > 1 && Math.abs(dayVals[dk] - 8.5) > 0.001) halfDayVarianceCount++;
+    });
+    var hasHalfDayVar = halfDayVarianceCount > 0;
 
     var total     = sat + sun + mon + tue + wed + thu + fri;
     var otWeekday = [mon,tue,wed,thu,fri].reduce(function(a,h){ return a + (h>9?h-9:0); }, 0);
