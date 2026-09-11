@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.5.0 | 2026-09-11 -->
+     Build: v1.5.1 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.5.0</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.5.1</span>
     </div>
   </aside>
 
@@ -9100,10 +9100,11 @@ async function detectIlcVariances() {
 
     // ilcDayMap: "serial|YYYY-MM-DD" → { ...day info }
     var ilcDayMap  = {};
-    // Guard against duplicate ILC docs (same serial+weekending) caused by
-    // multiple uploads before the upsertKeys fix was in place.
-    // Only the first occurrence of each serial+weekending is used.
-    var _ilcWeDedup = {};
+    // Guard against duplicate ILC docs (same serial+weekending) from re-uploads.
+    // Key uses the parsed ISO weekending so different date formats ("8/7/2026" vs
+    // "2026-08-07") for the same week collapse to the same slot.
+    // When duplicates exist keep the most recently uploaded doc (highest uploadedAt).
+    var _ilcWeDedup = {};  // "serial|ISO-weekending" → { uploadedAt, data }
 
     ilcSnap.forEach(function(d) {
       var r = d.data();
@@ -9124,13 +9125,22 @@ async function detectIlcVariances() {
         }
       }
 
-      // Skip duplicate ILC records for the same person+weekending
-      var ilcWeKey = (r.ibmSerialNo || '').trim() + '|' + (r.weekending || '').trim();
+      // Deduplicate by serial + parsed-ISO weekending — keeps the latest upload.
+      // Different date formats ("8/7/2026" vs "2026-08-07") for the same week
+      // collapse to the same slot via _toISODate.
+      var weISOKey   = _toISODate((r.weekending || '').trim()) || (r.weekending || '').trim();
+      var ilcWeKey   = (r.ibmSerialNo || '').trim() + '|' + weISOKey;
+      var uploadedAt = (r.uploadedAt && r.uploadedAt.toMillis) ? r.uploadedAt.toMillis() : 0;
       if (_ilcWeDedup[ilcWeKey]) {
-        _dbg('  STEP2 SKIP (duplicate) docId=' + d.id + ' serial=' + r.ibmSerialNo + ' weekending=' + r.weekending);
-        return;
+        if (uploadedAt <= _ilcWeDedup[ilcWeKey].uploadedAt) {
+          _dbg('  STEP2 SKIP (duplicate, older) docId=' + d.id + ' serial=' + r.ibmSerialNo + ' weekending=' + r.weekending);
+          return;
+        }
+        // Newer upload — evict old day-map entries so they don't contaminate results
+        _ilcWeDedup[ilcWeKey].mapKeys.forEach(function(k) { delete ilcDayMap[k]; });
+        _dbg('  STEP2 REPLACE (duplicate, newer) docId=' + d.id + ' serial=' + r.ibmSerialNo + ' weekending=' + r.weekending);
       }
-      _ilcWeDedup[ilcWeKey] = true;
+      _ilcWeDedup[ilcWeKey] = { uploadedAt: uploadedAt, mapKeys: [] };
 
       var serial = (r.ibmSerialNo || '').trim();
       var we     = (r.weekending  || '').trim();
@@ -9178,6 +9188,10 @@ async function detectIlcVariances() {
         }
 
         var mapKey = serial + '|' + dateStr;
+        // Track this key so a later newer-doc replacement can evict it
+        if (_ilcWeDedup[ilcWeKey].mapKeys.indexOf(mapKey) === -1) {
+          _ilcWeDedup[ilcWeKey].mapKeys.push(mapKey);
+        }
         if (ilcDayMap[mapKey]) {
           // Merge duplicate same-person+date ILC entries
           var existing = ilcDayMap[mapKey];
