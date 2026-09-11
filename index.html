@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.4.5 | 2026-09-11 -->
+     Build: v1.4.7 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.5</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.7</span>
     </div>
   </aside>
 
@@ -6191,7 +6191,7 @@ function _ilcWeekDates(weekendingStr) {
   // weekending = Friday; week runs Sat(-6) → Fri(0)
   var fri = new Date(d); fri.setUTCHours(0,0,0,0);
   var days = {};
-  var offsets = { saturday:-6, sunday:-5, monday:-4, tuesday:-3, wednesday:-2, thursday:-1, friday:0 };
+  var offsets = { monday:-4, tuesday:-3, wednesday:-2, thursday:-1, friday:0, saturday:1, sunday:2 };
   Object.keys(offsets).forEach(function(k) {
     var dd = new Date(fri);
     dd.setUTCDate(fri.getUTCDate() + offsets[k]);
@@ -8695,11 +8695,8 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
     return { variance: 'Yes', reason: 'Weekend clocking — ' + dayOfWeek + ' has ' + ilcAct + '/' + ilcMonHrs + 'h but Monday is: ' + (mBase || 'No Status') };
   }
 
-  // Rest Day on Monday.com: weekday clockings against Rest Day are exempt
-  // (scheduled day off — not a variance).
-  if (mBase === 'Rest Day') {
-    return { variance: 'No', reason: '' };
-  }
+  // Rest Day on a weekday is always a variance — Rest Day is only valid for
+  // Saturday/Sunday (handled by the weekend block above).
 
   // ── GB only: Monday must be a presence status ─────────────────────────────
   if (hasGB && !hasLeave) {
@@ -8722,12 +8719,14 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
 
   // ── Leave only (no GB) ────────────────────────────────────────────────────
   // Monday must show the exact matching leave type.
+  // HOL exception: Office/Remote is also valid (person worked on a public holiday).
   if (!hasGB && hasLeave) {
     var ilcLeaveType = hasSL  ? 'Sick'
                     : hasVL  ? 'Vacation'
                     : hasCDO ? 'CDO'
                     :          'Holiday';
     if (mBase === ilcLeaveType) return { variance: 'No', reason: '' };
+    if (hasHOL && (isPresence || mBase === 'Vacation')) return { variance: 'No', reason: '' };
     return { variance: 'Yes', reason: 'ILC is ' + ilcLeaveType + ' but Monday is: ' + (mStatus || 'No Status') };
   }
 
@@ -9047,13 +9046,13 @@ async function detectIlcVariances() {
     // never shifts the computed dates by one day.
 
     var ILC_WEEKDAYS = [
-      { key: 'saturday',  offset: -6 },  // Sat before the week  (weekending Fri − 6)
-      { key: 'sunday',    offset: -5 },  // Sun of that week     (weekending Fri − 5)
       { key: 'monday',    offset: -4 },
       { key: 'tuesday',   offset: -3 },
       { key: 'wednesday', offset: -2 },
       { key: 'thursday',  offset: -1 },
-      { key: 'friday',    offset:  0 }
+      { key: 'friday',    offset:  0 },
+      { key: 'saturday',  offset:  1 },  // Sat following the week (weekending Fri + 1)
+      { key: 'sunday',    offset:  2 }   // Sun following the week (weekending Fri + 2)
     ];
 
     // ilcDayMap: "serial|YYYY-MM-DD" → { ...day info }
