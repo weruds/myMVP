@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.4.0 | 2026-09-11 -->
+     Build: v1.4.1 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.0</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.1</span>
     </div>
   </aside>
 
@@ -8617,17 +8617,22 @@ function _mondayDateFromWeekending(weekendingStr) {
 
 // ── Apply ILC variance logic — ILC is the source of truth.
 //
-// Rules (ILC → expected Monday status):
-//   GB only        → Office / Remote (Scheduled) / Remote (Unscheduled) / Unscheduled
-//   SL only        → Sick  (any duration)
-//   VL only        → Vacation  (any duration)
-//   HOL / OHOL     → Designated Holiday  (any duration)
-//   CDO only       → CDO  (any duration)
-//   GB + SL        → presence  OR  Sick + Morning/Afternoon (half-day)
-//   GB + VL        → presence  OR  Vacation + Morning/Afternoon (half-day)
-//   GB + CDO       → presence  OR  CDO + Morning/Afternoon (half-day)
-//   GB + HOL/OHOL  → presence  OR  Designated Holiday + Morning/Afternoon (half-day)
-//   EMPL           → exempt (no variance)
+// ILC activity → required Monday.com status:
+//   GB only       → Office / Remote (Scheduled) / Remote (Unscheduled) / Unscheduled
+//   SL only       → Sick  (any duration)
+//   VL only       → Vacation  (any duration)
+//   HOL / OHOL    → Holiday  (any duration)
+//   CDO only      → CDO  (any duration)
+//   GB + SL       → presence  OR  Sick (half-day AM/PM)
+//   GB + VL       → presence  OR  Vacation (half-day AM/PM)
+//   GB + CDO      → presence  OR  CDO (half-day AM/PM)
+//   GB + HOL/OHOL → presence  OR  Holiday (half-day AM/PM)
+//   EMPL          → exempt (no variance)
+//
+// "No Status" on Monday is always a variance when ILC has any clocking.
+// "Rest Day" on Monday is only exempt when the ILC day is a normal weekday
+//  clocking — Saturday/Sunday GB clockings paired with Rest Day ARE variances
+//  (handled by the caller passing the dayOfWeek so we know it's a weekend).
 //
 // Returns { variance: 'Yes'|'No', reason: '' }
 function _applyIlcVarianceRule(ilcRec, mondayRec) {
@@ -8639,6 +8644,8 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
                   mDuration.indexOf('Afternoon (PM)') !== -1;
   var ilcAct    = (ilcRec.activity || '').trim().toUpperCase();
   var ilcMonHrs = parseFloat(ilcRec.monday || 0) || 0;
+  var dayOfWeek = (ilcRec.dayOfWeek || '').toLowerCase();  // 'monday'–'friday', or 'saturday'/'sunday'
+  var isWeekend = (dayOfWeek === 'saturday' || dayOfWeek === 'sunday');
 
   // ILC may have multiple activities comma-separated (e.g. "GB, SL")
   var ilcActList = ilcAct.split(',').map(function(a) { return a.trim(); });
@@ -8652,49 +8659,48 @@ function _applyIlcVarianceRule(ilcRec, mondayRec) {
   var isPresence = (mBase === 'Office' || mBase === 'Remote (Scheduled)' ||
                     mBase === 'Remote (Unscheduled)' || mBase === 'Unscheduled');
 
-  // Exempt: Emergency leave on either side
-  if (ilcActList.indexOf('EMPL') !== -1 || mBase === 'Emergency') {
+  // Exempt: ILC has Emergency leave (EMPL)
+  if (ilcActList.indexOf('EMPL') !== -1) {
     return { variance: 'No', reason: 'Emergency leave — exempt' };
   }
 
-  // Rest Day on Monday.com is always a scheduled day off — never a variance
-  if (mBase === 'Rest Day') {
+  // Rest Day on Monday.com: exempt only for normal weekday clockings.
+  // Weekend clockings paired with Rest Day are a variance (Weekend-Rest Day).
+  if (mBase === 'Rest Day' && !isWeekend) {
     return { variance: 'No', reason: '' };
   }
 
   // ── GB only: Monday must be a presence status ─────────────────────────────
   if (hasGB && !hasLeave) {
     if (isPresence) return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC is GB/' + ilcMonHrs + 'h but Monday is leave: ' + (mBase || 'no status') };
+    var gbLabel = mBase || 'No Status';
+    return { variance: 'Yes', reason: 'ILC is GB/' + ilcMonHrs + 'h but Monday is: ' + gbLabel };
   }
 
   // ── GB + leave (half-day split) ───────────────────────────────────────────
-  // Acceptable on Monday: presence status  OR  matching leave type as half-day
+  // Monday must be: presence  OR  matching leave type as a half-day (AM/PM)
   if (hasGB && hasLeave) {
     var ilcLeaveType = hasSL  ? 'Sick'
                     : hasVL  ? 'Vacation'
                     : hasCDO ? 'CDO'
-                    :          'Designated Holiday';
-    // Presence is fine — ILC shows they worked part of the day
+                    :          'Holiday';
     if (isPresence) return { variance: 'No', reason: '' };
-    // Matching leave type as a half-day is also fine
     if (mBase === ilcLeaveType && mHalfDay) return { variance: 'No', reason: '' };
-    // Anything else is a variance
-    return { variance: 'Yes', reason: 'ILC=GB+' + ilcLeaveType + ' but Monday is: ' + (mStatus || 'no status') };
+    return { variance: 'Yes', reason: 'ILC=GB+' + ilcLeaveType + ' but Monday is: ' + (mStatus || 'No Status') };
   }
 
   // ── Leave only (no GB) ────────────────────────────────────────────────────
-  // Monday must show the matching leave type
+  // Monday must show the exact matching leave type
   if (!hasGB && hasLeave) {
     var ilcLeaveType = hasSL  ? 'Sick'
                     : hasVL  ? 'Vacation'
                     : hasCDO ? 'CDO'
-                    :          'Designated Holiday';
+                    :          'Holiday';
     if (mBase === ilcLeaveType) return { variance: 'No', reason: '' };
-    return { variance: 'Yes', reason: 'ILC is ' + ilcLeaveType + ' but Monday is: ' + (mStatus || 'no status') };
+    return { variance: 'Yes', reason: 'ILC is ' + ilcLeaveType + ' but Monday is: ' + (mStatus || 'No Status') };
   }
 
-  // Fallback — unrecognised combination, no variance assumed
+  // Fallback — unrecognised ILC combination, no variance assumed
   return { variance: 'No', reason: '' };
 }
 
@@ -9007,6 +9013,8 @@ async function detectIlcVariances() {
     // never shifts the computed dates by one day.
 
     var ILC_WEEKDAYS = [
+      { key: 'saturday',  offset: -6 },  // Sat before the week  (weekending Fri − 6)
+      { key: 'sunday',    offset: -5 },  // Sun of that week     (weekending Fri − 5)
       { key: 'monday',    offset: -4 },
       { key: 'tuesday',   offset: -3 },
       { key: 'wednesday', offset: -2 },
@@ -9201,8 +9209,9 @@ async function detectIlcVariances() {
 
       // Build a minimal ILC record shaped the way _applyIlcVarianceRule expects
       var dayIlcRec = {
-        activity: entry.ilcActivity,
-        monday:   entry.ilcClocking
+        activity:  entry.ilcActivity,
+        monday:    entry.ilcClocking,
+        dayOfWeek: entry.dayOfWeek   // needed for weekend Rest Day variance detection
       };
 
       var varianceFlag          = 'No';
