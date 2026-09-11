@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.4.4 | 2026-09-11 -->
+     Build: v1.4.5 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.4</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.5</span>
     </div>
   </aside>
 
@@ -3786,6 +3786,7 @@
           <option>Weekly Variance</option>
           <option>No Status</option>
           <option>Unscheduled</option>
+          <option>Wrong tagging</option>
         </select>
         <input type="text" id="wfh-var-search" placeholder="Search name or serial…" oninput="filterWfhVariance()" />
       </div>
@@ -7960,13 +7961,20 @@ function _wfhVarianceLabel(r) {
   if (!status) return 'No Status';
 
   if (base === 'No Status') return 'No Status';
-  if (base === 'Remote (Unscheduled)' || base === 'Unscheduled') return 'Unscheduled';
+  if (base === 'Remote (Unscheduled)' || base === 'Unscheduled') {
+    var dow = _getDayOfWeek(r.date || '');
+    var d1  = (r.wfhDay1 || '').toLowerCase();
+    var d2  = (r.wfhDay2 || '').toLowerCase();
+    if (dow && (dow === d1 || dow === d2)) return 'Wrong tagging';
+    return 'Unscheduled';
+  }
   if (base === 'Remote (Scheduled)') {
     var dow = _getDayOfWeek(r.date || '');
     var d1  = (r.wfhDay1 || '').toLowerCase();
     var d2  = (r.wfhDay2 || '').toLowerCase();
     if (dow && dow !== d1 && dow !== d2) return 'Daily Variance';
   }
+  if (stored === 'Wrong tagging')   return 'Wrong tagging';
   if (stored === 'Weekly Variance') return 'Weekly Variance';
   if (stored === 'Daily Variance')  return 'Daily Variance';
   return 'No Variance';
@@ -8046,6 +8054,7 @@ function _renderWfhVariance() {
     if (label === 'Unscheduled')     return _badge('Unscheduled',     BADGE_RED);
     if (label === 'Daily Variance')  return _badge('Daily Variance',  BADGE_RED);
     if (label === 'Weekly Variance') return _badge('Weekly Variance', BADGE_YELLOW);
+    if (label === 'Wrong tagging')   return _badge('Wrong tagging',   BADGE_YELLOW);
     return _badge('No Variance', BADGE_GREEN);
   }
 
@@ -8248,8 +8257,13 @@ async function detectWfhVariances() {
         varType = 'Daily Variance';
         reason  = 'Remote (Scheduled) on a non-WFH day (' + dayLabel + ')';
       } else if (varType === 'No Variance' && (status === 'Remote (Unscheduled)' || status === 'Unscheduled')) {
-        varType = 'Daily Variance';
-        reason  = 'Unscheduled remote on ' + (isWfhDay ? 'WFH day' : 'non-WFH day') + ' (' + dayLabel + ')';
+        if (isWfhDay) {
+          varType = 'Wrong tagging';
+          reason  = 'Wrong tagging of Monday Attendance';
+        } else {
+          varType = 'Daily Variance';
+          reason  = 'Unscheduled remote on non-WFH day (' + dayLabel + ')';
+        }
       }
 
       // Rule 4: weekly onsite count — always evaluated independently of Rule 3.
