@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- ODC SEET Variance Dashboard (myMVP)
      Developed and created by: Wilson Serquina
-     Build: v1.4.2 | 2026-09-11 -->
+     Build: v1.4.3 | 2026-09-11 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3415,7 +3415,7 @@
     </div>
     <!-- Build version -->
     <div style="padding:4px 14px 8px;text-align:center;">
-      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.2</span>
+      <span style="font-size:10px;color:rgba(255,255,255,0.25);letter-spacing:0.5px;">v1.4.3</span>
     </div>
   </aside>
 
@@ -8569,31 +8569,42 @@ function _toISODate(raw) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   // Try direct parse with UTC anchor — only for strings that already contain
   // a 'T' (ISO datetime strings like "2026-08-14T00:00:00Z").
-  // Do NOT append T00:00:00Z to human-readable strings like "Aug 14, 2026"
-  // because the result is an invalid/ambiguous format that V8 may parse as
-  // local time, causing a 1-day shift in UTC+8 (e.g. Aug 14 → Aug 13).
   if (s.indexOf('T') !== -1) {
     var d = new Date(s);
     if (!isNaN(d.getTime())) return d.toISOString().substring(0, 10);
   }
+  // Human readable Month Day, Year (e.g. "Aug 28, 2026" or "August 28, 2026")
+  var mNameMatch = s.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$/);
+  if (mNameMatch) {
+    var monthMap = {
+      jan:0, january:0, feb:1, february:1, mar:2, march:2, apr:3, april:3,
+      may:4, jun:5, june:5, jul:6, july:6, aug:7, august:7, sep:8, sept:8, september:8,
+      oct:9, october:9, nov:10, november:10, dec:11, december:11
+    };
+    var mKey = mNameMatch[1].toLowerCase();
+    if (monthMap.hasOwnProperty(mKey)) {
+      var yr = parseInt(mNameMatch[3], 10);
+      var mo = monthMap[mKey];
+      var dy = parseInt(mNameMatch[2], 10);
+      var dUtc = new Date(Date.UTC(yr, mo, dy));
+      if (!isNaN(dUtc.getTime())) return dUtc.toISOString().substring(0, 10);
+    }
+  }
   // MM/DD/YYYY or M/D/YYYY
   var slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (slash) {
-    d = new Date(Date.UTC(parseInt(slash[3]), parseInt(slash[1]) - 1, parseInt(slash[2])));
+    d = new Date(Date.UTC(parseInt(slash[3], 10), parseInt(slash[1], 10) - 1, parseInt(slash[2], 10)));
     if (!isNaN(d.getTime())) return d.toISOString().substring(0, 10);
   }
   // DD-MM-YYYY or D-M-YYYY
   var dash = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
   if (dash) {
-    d = new Date(Date.UTC(parseInt(dash[3]), parseInt(dash[2]) - 1, parseInt(dash[1])));
+    d = new Date(Date.UTC(parseInt(dash[3], 10), parseInt(dash[2], 10) - 1, parseInt(dash[1], 10)));
     if (!isNaN(d.getTime())) return d.toISOString().substring(0, 10);
   }
-  // Fallback — let the browser parse it, then re-anchor to UTC midnight so
-  // local-time parsing (e.g. "Aug 7, 2026" in UTC+8 → Aug 6 UTC) does not
-  // shift the date by one day.
+  // Fallback — let the browser parse it, then re-anchor to UTC midnight
   d = new Date(s);
   if (!isNaN(d.getTime())) {
-    // Re-anchor: use the local year/month/day, not the UTC-shifted equivalent.
     return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
              .toISOString().substring(0, 10);
   }
